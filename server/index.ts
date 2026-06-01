@@ -137,6 +137,7 @@ type ChatMessage = {
   isSelf: boolean;
   deliveryStatus?: DeliveryStatus;
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string; size?: string }>;
+  reactions?: Record<string, string[]>;  // icon → [userId, ...]
   raw?: unknown;
 };
 
@@ -958,7 +959,27 @@ async function afterLogin(api: API) {
   });
   api.listener.on("reaction", (reaction) => {
     recordListenerEvent("reaction", { threadId: reaction.threadId, isSelf: reaction.isSelf });
-    io.emit("reaction", reaction);
+    // Store reaction on the message in cache
+    const threadId = String(reaction.threadId ?? "");
+    const data = reaction.data;
+    const msgId = String(data?.msgId ?? data?.cliMsgId ?? "");
+    const icon = String(data?.content?.rIcon ?? "❤️");
+    const userId = String(data?.actionId ?? data?.uidFrom ?? "");
+    if (threadId && msgId) {
+      const list = messages.get(threadId);
+      if (list) {
+        const msg = list.find((m) => m.id === msgId);
+        if (msg) {
+          if (!msg.reactions) msg.reactions = {};
+          if (!msg.reactions[icon]) msg.reactions[icon] = [];
+          if (!msg.reactions[icon].includes(userId)) {
+            msg.reactions[icon].push(userId);
+            schedulePersist();
+          }
+        }
+      }
+    }
+    io.emit("reaction", { threadId, msgId, icon, userId, raw: reaction });
   });
   api.listener.on("undo", (undo) => {
     recordListenerEvent("undo", { threadId: undo.threadId, isSelf: undo.isSelf });

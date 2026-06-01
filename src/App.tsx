@@ -76,6 +76,7 @@ type ChatMessage = {
   isSelf: boolean
   deliveryStatus?: DeliveryStatus
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string; size?: string }>
+  reactions?: Record<string, string[]>  // icon → [userId, ...]
   raw?: unknown
 }
 
@@ -566,12 +567,16 @@ function App() {
       const targetId = String(data.msgId ?? data.cliMsgId ?? '')
       if (targetId) setMessages((prev) => prev.filter((m) => m.id !== targetId))
     })
-    socket.on('reaction', (data: { threadId?: string }) => {
-      // For now just show a subtle notice; full reaction display on messages
-      // would require storing reactions per-message (future enhancement).
-      if (data.threadId && selectedRef.current?.id === data.threadId) {
-        setNotice('Có reaction mới')
-      }
+    socket.on('reaction', (data: { threadId?: string; msgId?: string; icon?: string; userId?: string }) => {
+      if (!data.threadId || !data.msgId || !data.icon) return
+      setMessages((prev) => prev.map((msg) => {
+        if (msg.id !== data.msgId) return msg
+        const reactions = { ...(msg.reactions || {}) }
+        const users = [...(reactions[data.icon!] || [])]
+        if (!users.includes(data.userId || '')) users.push(data.userId || '')
+        reactions[data.icon!] = users
+        return { ...msg, reactions }
+      }))
     })
     window.addEventListener('error', handleBrowserError)
     window.addEventListener('unhandledrejection', handleUnhandledRejection)
@@ -1678,6 +1683,15 @@ function App() {
                       </span>
                     )
                   })}
+                  {message.reactions && Object.keys(message.reactions).length > 0 && (
+                    <span className="msgReactions">
+                      {Object.entries(message.reactions).map(([icon, users]) => (
+                        <span key={icon} className="reactionBubble" title={users.join(', ')}>
+                          {icon} <small>{users.length}</small>
+                        </span>
+                      ))}
+                    </span>
+                  )}
                   <span className="messageMeta">
                     <time>{new Date(message.timestamp).toLocaleString('vi-VN')}</time>
                     {message.isSelf && deliveryLabel(message.deliveryStatus) && (

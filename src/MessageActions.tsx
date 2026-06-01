@@ -20,6 +20,7 @@ type ChatMessage = {
   isSelf: boolean
   deliveryStatus?: DeliveryStatus
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string; size?: string }>
+  reactions?: Record<string, string[]>
   raw?: unknown
 }
 
