@@ -14,5 +14,5 @@
     "allowImportingTsExtensions": false,
     "types": ["node"]
   },
-  "include": ["index.ts", "tunnel.ts"]
+  "include": ["index.ts", "tunnel.ts", "db.ts", "admin.ts"]
 }

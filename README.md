@@ -2,15 +2,15 @@
 
 Two pieces:
 
-- **`server/`** — a standalone Node bridge that holds the Zalo session, exposes a REST + Socket.IO API guarded by an API key, and ships an admin web UI for QR login and Cloudflare Tunnel control.
-- **Desktop app** (Electron + React/Vite) — a thin client. On first launch you paste the server URL and API key into the in-app settings; everything else flows over that connection.
+- **`server/`** — a standalone Node bridge that holds the Zalo session, generates its own API key, and ships an admin web UI (password-protected) for QR login, key management, and Cloudflare Tunnel control.
+- **Desktop app** (Electron + React/Vite) — a thin client. On first launch you paste the server URL and the API key (copied from the admin UI) into the in-app settings; everything else flows over that connection.
 
 ```
 ┌──────────────────────────┐         ┌──────────────────────────────┐
 │  Szalo desktop (you)     │  HTTP   │  Szalo server (anywhere)     │
 │  - React/Vite UI         │ ──────► │  - Holds Zalo QR session     │
-│  - Settings: URL + key   │  WSS    │  - REST + Socket.IO          │
-│  - No node deps at run   │ ◄────── │  - Admin UI on /admin        │
+│  - Settings: URL + key   │  WSS    │  - Generates API key         │
+│  - No node deps at run   │ ◄────── │  - /admin (password 123456)  │
 └──────────────────────────┘         │  - Cloudflare Tunnel built-in│
                                      └──────────────────────────────┘
 ```
@@ -25,38 +25,45 @@ Two pieces:
 
 ```bash
 cd server
-cp .env.example .env       # set API_KEY to a long random string
 npm install
 npm run dev                # tsx watch on port 13113 by default
 ```
 
-Open `http://localhost:13113/admin` to:
+On first boot the server creates `db.json` (under `DATA_DIR`, default `.zalo-manager/`) with:
 
-- Paste the API key (matches `API_KEY` in `.env`)
-- See the local URL + the public URL once the tunnel starts
-- Generate a Zalo QR and log the server into your Zalo account
-- Start / stop the Cloudflare tunnel (requires [`cloudflared`](https://github.com/cloudflare/cloudflared/releases) on `PATH`)
+- A freshly generated **API key** (32 random bytes, hex)
+- The default **admin password** `123456` (scrypt-hashed)
 
-`.env` keys:
+Open `http://localhost:13113/admin` and log in with `123456`. From there:
+
+- See and copy the API key for desktop clients
+- Rotate the API key (disconnects all current clients)
+- Change the admin password (the banner nags you until you change it from `123456`)
+- Generate a Zalo QR and log the server into your fixed Zalo account
+- Start / stop a Cloudflare Quick Tunnel (`*.trycloudflare.com`) — requires [`cloudflared`](https://github.com/cloudflare/cloudflared/releases) on `PATH`
+
+`.env` keys (all optional — server runs without an `.env` at all):
 
 | Key | Default | Notes |
 | --- | --- | --- |
 | `PORT` | `13113` | Any 1–65535. (`113113` isn't a valid TCP port.) |
-| `API_KEY` | — required | Long random string. The server refuses to start without one. |
 | `CLIENT_ORIGIN` | `*` | Or a comma-separated allow-list. `*` is the easy choice for desktop clients. |
-| `DATA_DIR` | `./.zalo-manager` | Where session, cache, and uploads live. |
+| `DATA_DIR` | `./.zalo-manager` | Where session, cache, uploads, and `db.json` live. |
+| `DB_FILE` | `<DATA_DIR>/db.json` | Override the JSON store path. |
 
-The session, conversations cache, and uploads are persisted under `DATA_DIR`. Logging in once survives restarts; logging out or wiping the dir requires a fresh QR.
+The session, conversations cache, uploads, and `db.json` are persisted under `DATA_DIR`. Logging in once survives restarts; deleting `db.json` regenerates the API key and resets the admin password to `123456`.
 
-### Auth model
+### Auth model — two distinct credentials
 
-Every `/api/*` route except the public health probe (`/api/health/ping`) requires the API key, sent as one of:
+| Endpoint group | Required credential | How |
+| --- | --- | --- |
+| `/api/health/ping`, `/admin`, `/api/admin/login` | none (public) | — |
+| `/api/admin/*` (key view/rotate, password, tunnel) | **admin session token** | header `x-admin-token: <token>` (issued by `POST /api/admin/login`) |
+| All other `/api/*` + Socket.IO | **API key** | `x-api-key: <key>` header / `Authorization: Bearer <key>` / `?api_key=<key>` |
 
-- `x-api-key: <key>` header
-- `Authorization: Bearer <key>` header
-- `?api_key=<key>` query param (used for `<img>` tags fetching attachments)
+The two are kept separate so the desktop client (which only has the API key) can't reach admin operations.
 
-Socket.IO connections pass the key as `auth.apiKey` in the handshake.
+Socket.IO connections pass the API key as `auth.apiKey` in the handshake.
 
 ## Desktop app
 
@@ -68,7 +75,7 @@ npm run pack               # builds the app + electron-builder --dir
 npm run dist               # builds an installer
 ```
 
-On first launch the app shows a settings card. Enter the server URL (e.g. `http://192.168.1.50:13113` or the tunnel's `https://xxx.trycloudflare.com`) and the API key. Settings live in `localStorage`; click the gear icon in the icon rail to change them later.
+On first launch the app shows a settings card. Enter the server URL (e.g. `http://192.168.1.50:13113` or the tunnel's `https://xxx.trycloudflare.com`) and the API key copied from the admin UI. Settings live in `localStorage`; click the gear icon in the icon rail to change them later.
 
 The Electron main process no longer embeds the server — it's just a renderer shell with a tray icon, bubble dock, and notifications.
 
@@ -77,8 +84,10 @@ The Electron main process no longer embeds the server — it's just a renderer s
 ```
 .
 ├── electron/           # Electron main + preload, build glue
-├── server/             # Standalone server (own package.json + .env)
+├── server/             # Standalone server (own package.json)
 │   ├── index.ts        # Express + Socket.IO + Zalo bridge
+│   ├── db.ts           # JSON store: API key + admin password hash
+│   ├── admin.ts        # Admin session tokens
 │   ├── tunnel.ts       # cloudflared child-process manager
 │   └── admin.html      # Admin UI (vanilla, served at /admin)
 ├── src/                # React frontend

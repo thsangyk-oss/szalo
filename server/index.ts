@@ -11,6 +11,8 @@ import { Readable } from "node:stream";
 import multer from "multer";
 import { Server } from "socket.io";
 import { TunnelManager } from "./tunnel";
+import { Database } from "./db";
+import { AdminSessions } from "./admin";
 import {
   AvatarSize,
   LoginQRCallbackEventType,
@@ -38,12 +40,6 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   process.exit(1);
 }
 
-const API_KEY = (process.env.API_KEY ?? "").trim();
-if (!API_KEY) {
-  console.error("API_KEY is required. Set API_KEY=<long-random-string> in .env or the environment.");
-  process.exit(1);
-}
-
 const CLIENT_ORIGIN_RAW = process.env.CLIENT_ORIGIN ?? "*";
 // "*" → allow any origin, no credentials. Otherwise comma-separated allow-list with credentials.
 const CORS_OPTIONS = CLIENT_ORIGIN_RAW.trim() === "*"
@@ -59,7 +55,16 @@ const ROOT = process.cwd();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(ROOT, ".zalo-manager");
+const DB_FILE = process.env.DB_FILE
+  ? path.resolve(process.env.DB_FILE)
+  : path.join(DATA_DIR, "db.json");
 const SESSION_FILE = path.join(DATA_DIR, "session.json");
+
+// Server config (API key + admin password) lives in db.json — generated on
+// first boot. Admin password defaults to "123456"; the user is expected to
+// change it via the admin UI.
+const db = new Database(DB_FILE);
+const adminSessions = new AdminSessions();
 const FRIENDS_CACHE_FILE = path.join(DATA_DIR, "friends.json");
 const CONVERSATIONS_CACHE_FILE = path.join(DATA_DIR, "conversations.json");
 const MESSAGES_CACHE_FILE = path.join(DATA_DIR, "messages.json");
@@ -190,8 +195,15 @@ function createZalo() {
 app.use(cors(CORS_OPTIONS));
 app.use(express.json({ limit: "2mb" }));
 
-// Always-public routes (no API key required) — health probe, admin UI, and uploaded files.
-const PUBLIC_PATHS = new Set(["/", "/api/health/ping", "/admin", "/admin/"]);
+// Always-public routes (no auth required) — health probe, admin UI shell,
+// and the admin login endpoint itself.
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/api/health/ping",
+  "/admin",
+  "/admin/",
+  "/api/admin/login",
+]);
 
 function readApiKey(req: express.Request): string {
   const header = req.header("x-api-key");
@@ -205,6 +217,16 @@ function readApiKey(req: express.Request): string {
   return "";
 }
 
+function readAdminToken(req: express.Request): string {
+  const header = req.header("x-admin-token");
+  if (typeof header === "string" && header) return header.trim();
+  const auth = req.header("authorization");
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("admin ")) {
+    return auth.slice(6).trim();
+  }
+  return "";
+}
+
 function timingSafeEquals(a: string, b: string) {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -212,8 +234,22 @@ function timingSafeEquals(a: string, b: string) {
 
 app.use((req, res, next) => {
   if (PUBLIC_PATHS.has(req.path)) return next();
+
+  // Admin endpoints: gated by an admin session bearer (issued after password
+  // login). Distinct from the API key so admins can't manage the server with
+  // just the desktop client's key.
+  if (req.path.startsWith("/api/admin/")) {
+    const token = readAdminToken(req);
+    if (!adminSessions.isValid(token)) {
+      res.status(401).json({ error: "Admin login required" });
+      return;
+    }
+    return next();
+  }
+
+  // Regular API: gated by the API key from db.json.
   const provided = readApiKey(req);
-  if (!provided || !timingSafeEquals(provided, API_KEY)) {
+  if (!provided || !timingSafeEquals(provided, db.getApiKey())) {
     res.status(401).json({ error: "Invalid or missing API key" });
     return;
   }
@@ -226,7 +262,7 @@ io.use((socket, next) => {
   const candidate = String(
     auth.apiKey ?? auth.token ?? socket.handshake.query?.api_key ?? socket.handshake.headers["x-api-key"] ?? "",
   ).trim();
-  if (!candidate || !timingSafeEquals(candidate, API_KEY)) {
+  if (!candidate || !timingSafeEquals(candidate, db.getApiKey())) {
     next(new Error("Invalid or missing API key"));
     return;
   }
@@ -843,6 +879,52 @@ app.get("/api/health/ping", (_req, res) => {
   // Public endpoint — used by the desktop app to probe URL/connectivity before
   // sending the API key. Does not expose any session info.
   res.json({ ok: true, service: "szalo-server", serverStartedAt: SERVER_STARTED_AT });
+});
+
+// === Admin auth ===
+app.post("/api/admin/login", (req, res) => {
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!password || !db.verifyAdminPassword(password)) {
+    res.status(401).json({ error: "Mật khẩu không đúng" });
+    return;
+  }
+  const token = adminSessions.issue();
+  res.json({ token, mustChangePassword: db.verifyAdminPassword("123456") });
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  adminSessions.revoke(readAdminToken(req));
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/me", (_req, res) => {
+  res.json({
+    apiKey: db.getApiKey(),
+    mustChangePassword: db.verifyAdminPassword("123456"),
+    meta: db.meta(),
+  });
+});
+
+app.post("/api/admin/password", (req, res) => {
+  const current = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+  const next = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+  if (!db.verifyAdminPassword(current)) {
+    res.status(401).json({ error: "Mật khẩu hiện tại sai" });
+    return;
+  }
+  if (next.length < 4) {
+    res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 4 ký tự" });
+    return;
+  }
+  db.setAdminPassword(next);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/api-key/rotate", (_req, res) => {
+  const apiKey = db.rotateApiKey();
+  // Boot every connected socket — old key is no longer valid.
+  io.disconnectSockets(true);
+  res.json({ apiKey });
 });
 
 // === Cloudflare tunnel admin ===

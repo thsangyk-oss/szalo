@@ -23,7 +23,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); padding: 32px 24px 80px; }
     h1 { margin: 0 0 6px; font-size: 1.7rem; display: flex; align-items: center; gap: 10px; }
-    h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    h2 { margin: 0 0 12px; font-size: 1.05rem; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     p.lead { margin: 0 0 24px; color: var(--muted); }
     main { max-width: 920px; margin: 0 auto; display: grid; gap: 18px; }
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
@@ -69,30 +69,69 @@
       background: var(--panel); border: 1px solid var(--border); padding: 10px 16px;
       border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
       font-size: 0.85rem; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+      z-index: 999;
     }
     .toast.show { opacity: 1; }
+    .login {
+      position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 50;
+    }
+    .loginCard { width: min(380px, calc(100vw - 32px)); }
+    .loginCard input { font-size: 1rem; padding: 12px 14px; }
+    .banner {
+      padding: 10px 14px; border-radius: 9px; background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.3); color: #fcd34d; font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <main>
+  <!-- Login overlay -->
+  <div id="loginOverlay" class="login">
+    <div class="card loginCard stack">
+      <h1 style="margin: 0 0 4px;">🛰️ Szalo Server</h1>
+      <p class="lead" style="margin: 0;">Đăng nhập admin để quản lý server.</p>
+      <div>
+        <label for="loginPwd">Mật khẩu admin</label>
+        <input id="loginPwd" type="password" placeholder="Mặc định: 123456" autocomplete="current-password" autofocus />
+      </div>
+      <div id="loginError" class="error" style="display: none;"></div>
+      <button id="loginBtn" type="button" class="primary" style="justify-content: center;">Đăng nhập</button>
+      <p class="keyHint">Đăng nhập lần đầu dùng mật khẩu mặc định <code>123456</code> rồi đổi ngay trong phần "Mật khẩu admin".</p>
+    </div>
+  </div>
+
+  <main id="adminBody" class="hidden">
     <header>
-      <h1>🛰️ Szalo Server</h1>
-      <p class="lead">Bridge Zalo cố định cho desktop client. Nhập API key để đăng nhập Zalo và xuất đường dẫn public qua Cloudflare Tunnel.</p>
+      <h1>
+        <span>🛰️ Szalo Server</span>
+        <span style="margin-left: auto; display: flex; gap: 8px; font-size: 0.85rem;">
+          <button id="logoutBtn" type="button" class="danger" title="Đăng xuất admin">⎋ Đăng xuất</button>
+        </span>
+      </h1>
+      <p class="lead">Bridge Zalo cố định cho desktop client. Cấp API key, quản lý đăng nhập Zalo, và xuất public URL qua Cloudflare Tunnel.</p>
     </header>
 
-    <section class="card">
-      <h2>API key</h2>
-      <p class="keyHint">Khóa này phải khớp với <code>API_KEY</code> trong file <code>.env</code> của server. Trang admin lưu nó vào <code>localStorage</code> của trình duyệt — không gửi đi đâu khác.</p>
-      <div class="urlBox">
-        <input id="apiKey" type="password" placeholder="Dán API key vào đây" autocomplete="off" />
-        <button id="apiKeyShow" type="button" title="Hiện/ẩn">👁</button>
-        <button id="apiKeySave" type="button" class="primary">Lưu &amp; xác thực</button>
-      </div>
-      <div id="apiKeyStatus" style="margin-top: 10px;"></div>
-    </section>
+    <div id="passwordBanner" class="banner hidden">
+      ⚠ Bạn đang dùng mật khẩu mặc định <code>123456</code>. Hãy đổi mật khẩu ngay.
+    </div>
 
-    <section class="grid2">
-      <div class="card">
+    <div class="grid2">
+      <section class="card">
+        <h2>🔑 API key cho client</h2>
+        <p class="keyHint" style="margin-top: 0;">Dán key này vào màn hình "Cài đặt server" của desktop app. Server tự sinh khóa — không cần cấu hình tay.</p>
+        <div class="urlBox">
+          <input id="apiKey" type="password" readonly />
+          <button id="apiKeyShow" type="button" title="Hiện/ẩn">👁</button>
+          <button data-copy="#apiKey" type="button">Copy</button>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <button id="apiKeyRotate" type="button" class="danger">↻ Tạo key mới</button>
+          <small style="color: var(--muted);">Tạo key mới sẽ ngắt mọi client đang kết nối.</small>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>📡 Server URL</h2>
         <div class="stack">
           <div>
@@ -113,7 +152,7 @@
           <div class="row">
             <button id="tunnelStart" type="button" class="primary">▶ Khởi tạo tunnel</button>
             <button id="tunnelStop" type="button" class="danger">■ Dừng tunnel</button>
-            <button id="tunnelRefresh" type="button">↻ Làm mới</button>
+            <button id="tunnelRefresh" type="button">↻</button>
           </div>
           <details>
             <summary style="cursor: pointer; color: var(--muted); font-size: 0.85rem;">Log cloudflared</summary>
@@ -125,20 +164,37 @@
             và đảm bảo lệnh có trong PATH. Quick Tunnel sinh subdomain <code>*.trycloudflare.com</code> miễn phí, không cần tài khoản Cloudflare.
           </p>
         </div>
-      </div>
+      </section>
+    </div>
 
-      <div class="card">
-        <h2>📱 Đăng nhập Zalo</h2>
-        <div class="stack">
-          <div id="loginStatus" class="row"></div>
-          <div id="loginBody">
-            <div class="empty">Đang tải trạng thái...</div>
-          </div>
-          <div class="row">
-            <button id="loginStart" type="button" class="primary">Tạo QR đăng nhập</button>
-            <button id="loginLogout" type="button" class="danger">Đăng xuất</button>
-            <button id="loginRefresh" type="button">↻ Làm mới</button>
-          </div>
+    <section class="card">
+      <h2>📱 Đăng nhập Zalo</h2>
+      <div class="stack">
+        <div id="loginStatus" class="row"></div>
+        <div id="loginBody">
+          <div class="empty">Đang tải trạng thái...</div>
+        </div>
+        <div class="row">
+          <button id="zaloStart" type="button" class="primary">Tạo QR đăng nhập</button>
+          <button id="zaloLogout" type="button" class="danger">Đăng xuất Zalo</button>
+          <button id="zaloRefresh" type="button">↻</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>🔒 Mật khẩu admin</h2>
+      <div class="stack">
+        <div>
+          <label for="curPwd">Mật khẩu hiện tại</label>
+          <input id="curPwd" type="password" autocomplete="current-password" />
+        </div>
+        <div>
+          <label for="newPwd">Mật khẩu mới (≥ 4 ký tự)</label>
+          <input id="newPwd" type="password" autocomplete="new-password" />
+        </div>
+        <div class="row">
+          <button id="changePwdBtn" type="button" class="primary">Đổi mật khẩu</button>
         </div>
       </div>
     </section>
@@ -153,25 +209,14 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // ======= state =======
-    const STORAGE_KEY = "szalo-admin-key";
-    let apiKey = localStorage.getItem(STORAGE_KEY) || "";
+    // ===== state =====
+    const TOKEN_KEY = "szalo-admin-token";
+    let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
+    let apiKey = "";
     let socket = null;
-    let lastStatus = null;
 
-    // ======= utils =======
-    function $(selector) { return document.querySelector(selector); }
-    function authedFetch(path, init = {}) {
-      const headers = new Headers(init.headers || {});
-      if (apiKey) headers.set("x-api-key", apiKey);
-      return fetch(path, { ...init, headers });
-    }
-    async function authedJSON(path, init) {
-      const response = await authedFetch(path, init);
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
-      return payload;
-    }
+    // ===== utils =====
+    function $(s) { return document.querySelector(s); }
     function toast(message) {
       const node = $("#toast");
       node.textContent = message;
@@ -180,28 +225,95 @@
       toast._timer = setTimeout(() => node.classList.remove("show"), 1800);
     }
 
-    // ======= API key =======
-    $("#apiKey").value = apiKey;
-    $("#apiKeyShow").addEventListener("click", () => {
-      const input = $("#apiKey");
-      input.type = input.type === "password" ? "text" : "password";
-    });
-    $("#apiKeySave").addEventListener("click", async () => {
-      apiKey = $("#apiKey").value.trim();
-      localStorage.setItem(STORAGE_KEY, apiKey);
-      const statusEl = $("#apiKeyStatus");
-      statusEl.innerHTML = '<span class="pill muted">Đang kiểm tra...</span>';
-      try {
-        await authedJSON("/api/status");
-        statusEl.innerHTML = '<span class="pill ok">✔ Đã xác thực — đang kết nối realtime</span>';
-        connectSocket();
-        refreshAll();
-      } catch (error) {
-        statusEl.innerHTML = `<span class="pill err">✘ ${error.message}</span>`;
+    function adminFetch(path, init = {}) {
+      const headers = new Headers(init.headers || {});
+      if (adminToken) headers.set("x-admin-token", adminToken);
+      if (init.body && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
+        headers.set("Content-Type", "application/json");
       }
+      return fetch(path, { ...init, headers });
+    }
+    async function adminJSON(path, init) {
+      const response = await adminFetch(path, init);
+      const payload = await response.json().catch(() => null);
+      if (response.status === 401) {
+        showLogin("Phiên đăng nhập hết hạn");
+        throw new Error("unauthorized");
+      }
+      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    function apiFetch(path, init = {}) {
+      const headers = new Headers(init.headers || {});
+      if (apiKey) headers.set("x-api-key", apiKey);
+      if (init.body && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
+        headers.set("Content-Type", "application/json");
+      }
+      return fetch(path, { ...init, headers });
+    }
+    async function apiJSON(path, init) {
+      const response = await apiFetch(path, init);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    // ===== login =====
+    function showLogin(message) {
+      sessionStorage.removeItem(TOKEN_KEY);
+      adminToken = "";
+      $("#loginOverlay").classList.remove("hidden");
+      $("#adminBody").classList.add("hidden");
+      $("#loginPwd").value = "";
+      $("#loginPwd").focus();
+      const errEl = $("#loginError");
+      if (message) {
+        errEl.textContent = message;
+        errEl.style.display = "block";
+      } else {
+        errEl.style.display = "none";
+      }
+    }
+
+    async function attemptLogin() {
+      const password = $("#loginPwd").value;
+      if (!password) return;
+      $("#loginBtn").disabled = true;
+      try {
+        const response = await fetch("/api/admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error((payload && payload.error) || "Đăng nhập thất bại");
+        adminToken = payload.token;
+        sessionStorage.setItem(TOKEN_KEY, adminToken);
+        $("#loginOverlay").classList.add("hidden");
+        $("#adminBody").classList.remove("hidden");
+        $("#loginError").style.display = "none";
+        await bootAdmin();
+      } catch (error) {
+        $("#loginError").textContent = error.message;
+        $("#loginError").style.display = "block";
+      } finally {
+        $("#loginBtn").disabled = false;
+      }
+    }
+
+    $("#loginBtn").addEventListener("click", attemptLogin);
+    $("#loginPwd").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") attemptLogin();
     });
 
-    // ======= copy buttons =======
+    $("#logoutBtn").addEventListener("click", async () => {
+      try { await adminFetch("/api/admin/logout", { method: "POST" }); } catch {}
+      if (socket) { try { socket.disconnect(); } catch {} socket = null; }
+      showLogin("Đã đăng xuất");
+    });
+
+    // ===== copy buttons =====
     document.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-copy]");
       if (!button) return;
@@ -217,12 +329,28 @@
       }
     });
 
-    // ======= local URL =======
+    // ===== API key =====
+    $("#apiKeyShow").addEventListener("click", () => {
+      const input = $("#apiKey");
+      input.type = input.type === "password" ? "text" : "password";
+    });
+    $("#apiKeyRotate").addEventListener("click", async () => {
+      if (!confirm("Tạo API key mới sẽ ngắt mọi client đang kết nối. Tiếp tục?")) return;
+      try {
+        const result = await adminJSON("/api/admin/api-key/rotate", { method: "POST" });
+        apiKey = result.apiKey;
+        $("#apiKey").value = apiKey;
+        toast("Đã cấp key mới");
+        connectSocket();
+        refreshLogin();
+      } catch (error) { toast(error.message); }
+    });
+
+    // ===== local URL =====
     $("#localUrl").value = `${location.protocol}//${location.host}`;
 
-    // ======= login UI =======
+    // ===== Zalo login =====
     function renderLogin(status) {
-      lastStatus = status;
       const stateEl = $("#loginStatus");
       const bodyEl = $("#loginBody");
       const stateLabels = {
@@ -259,27 +387,27 @@
       ].map(([label, value]) => `<span class="pill muted">${label}: <strong style="color: var(--text); margin-left: 4px;">${value ?? 0}</strong></span>`).join("");
     }
 
-    $("#loginStart").addEventListener("click", async () => {
-      try { await authedJSON("/api/login/qr", { method: "POST" }); }
+    $("#zaloStart").addEventListener("click", async () => {
+      try { await apiJSON("/api/login/qr", { method: "POST" }); }
       catch (error) { toast(error.message); }
     });
-    $("#loginLogout").addEventListener("click", async () => {
+    $("#zaloLogout").addEventListener("click", async () => {
       if (!confirm("Đăng xuất tài khoản Zalo khỏi server?")) return;
-      try { await authedJSON("/api/logout", { method: "POST" }); toast("Đã đăng xuất"); refreshLogin(); }
+      try { await apiJSON("/api/logout", { method: "POST" }); toast("Đã đăng xuất"); refreshLogin(); }
       catch (error) { toast(error.message); }
     });
-    $("#loginRefresh").addEventListener("click", refreshLogin);
+    $("#zaloRefresh").addEventListener("click", refreshLogin);
 
     async function refreshLogin() {
       try {
-        const status = await authedJSON("/api/status");
+        const status = await apiJSON("/api/status");
         renderLogin(status);
       } catch (error) {
         $("#loginStatus").innerHTML = `<span class="pill err">${error.message}</span>`;
       }
     }
 
-    // ======= tunnel UI =======
+    // ===== tunnel =====
     function renderTunnel(status) {
       $("#publicUrl").value = status.publicUrl || "";
       const stateEl = $("#tunnelStatus");
@@ -297,27 +425,41 @@
     }
 
     $("#tunnelStart").addEventListener("click", async () => {
-      try {
-        const result = await authedJSON("/api/admin/tunnel/start", { method: "POST" });
-        renderTunnel(result);
-      } catch (error) { toast(error.message); }
+      try { renderTunnel(await adminJSON("/api/admin/tunnel/start", { method: "POST" })); }
+      catch (error) { toast(error.message); }
     });
     $("#tunnelStop").addEventListener("click", async () => {
-      try {
-        const result = await authedJSON("/api/admin/tunnel/stop", { method: "POST" });
-        renderTunnel(result);
-      } catch (error) { toast(error.message); }
+      try { renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" })); }
+      catch (error) { toast(error.message); }
     });
-    $("#tunnelRefresh").addEventListener("click", refreshTunnel);
+    $("#tunnelRefresh").addEventListener("click", async () => {
+      try { renderTunnel(await adminJSON("/api/admin/tunnel/status")); }
+      catch (error) { toast(error.message); }
+    });
 
-    async function refreshTunnel() {
+    // ===== password change =====
+    $("#changePwdBtn").addEventListener("click", async () => {
+      const currentPassword = $("#curPwd").value;
+      const newPassword = $("#newPwd").value;
+      if (!currentPassword || !newPassword) {
+        toast("Nhập đủ mật khẩu hiện tại và mật khẩu mới");
+        return;
+      }
       try {
-        const status = await authedJSON("/api/admin/tunnel/status");
-        renderTunnel(status);
-      } catch (error) { /* unauthenticated yet — ignore */ }
-    }
+        await adminJSON("/api/admin/password", {
+          method: "POST",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        $("#curPwd").value = "";
+        $("#newPwd").value = "";
+        toast("Đã đổi mật khẩu");
+        $("#passwordBanner").classList.add("hidden");
+      } catch (error) {
+        toast(error.message);
+      }
+    });
 
-    // ======= socket =======
+    // ===== socket =====
     function connectSocket() {
       if (socket) { try { socket.disconnect(); } catch {} }
       if (!apiKey) return;
@@ -326,24 +468,35 @@
       socket.on("tunnel_status", renderTunnel);
     }
 
-    function refreshAll() {
-      refreshLogin();
-      refreshTunnel();
+    // ===== boot =====
+    async function bootAdmin() {
+      try {
+        const me = await adminJSON("/api/admin/me");
+        apiKey = me.apiKey;
+        $("#apiKey").value = apiKey;
+        if (me.mustChangePassword) {
+          $("#passwordBanner").classList.remove("hidden");
+        } else {
+          $("#passwordBanner").classList.add("hidden");
+        }
+        connectSocket();
+        const [status, tunnelStatus] = await Promise.allSettled([
+          apiJSON("/api/status"),
+          adminJSON("/api/admin/tunnel/status"),
+        ]);
+        if (status.status === "fulfilled") renderLogin(status.value);
+        if (tunnelStatus.status === "fulfilled") renderTunnel(tunnelStatus.value);
+      } catch (error) {
+        if (error.message !== "unauthorized") toast(error.message);
+      }
     }
 
-    // ======= boot =======
-    if (apiKey) {
-      $("#apiKeyStatus").innerHTML = '<span class="pill muted">Đang kết nối...</span>';
-      authedJSON("/api/status").then((status) => {
-        $("#apiKeyStatus").innerHTML = '<span class="pill ok">✔ Đã xác thực</span>';
-        connectSocket();
-        renderLogin(status);
-        refreshTunnel();
-      }).catch((error) => {
-        $("#apiKeyStatus").innerHTML = `<span class="pill err">✘ ${error.message}</span>`;
-      });
+    if (adminToken) {
+      $("#loginOverlay").classList.add("hidden");
+      $("#adminBody").classList.remove("hidden");
+      bootAdmin();
     } else {
-      $("#apiKeyStatus").innerHTML = '<span class="pill warn">Nhập API key để bắt đầu</span>';
+      showLogin();
     }
   </script>
 </body>
