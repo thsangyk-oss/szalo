@@ -10,6 +10,7 @@ import GlobalSearch from './GlobalSearch'
 import QuickReplyPicker from './QuickReplyPicker'
 import FindUser from './FindUser'
 import MentionPicker, { type GroupMember } from './MentionPicker'
+import GroupMembersModal from './GroupMembersModal'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -345,6 +346,7 @@ function App() {
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [showFindUser, setShowFindUser] = useState(false)
   const [showQuickReply, setShowQuickReply] = useState(false)
+  const [showAllMembers, setShowAllMembers] = useState(false)
   // @mention picker state for group composer
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
   // Collected mentions {pos, uid, len} for the current draft, sent with the message
@@ -1528,7 +1530,11 @@ function App() {
                     {groupDetail.description && <p>{groupDetail.description}</p>}
                     <div className="memberStrip">
                       {groupDetail.members.slice(0, 12).map((member) => (
-                        <span className="memberItem" key={member.id} title={member.displayName}>
+                        <span className="memberItem" key={member.id} title={member.displayName} onClick={() => {
+                          const existing = conversations.find((c) => c.id === member.id)
+                          const target = existing ?? { id: member.id, type: 'user' as ThreadKind, name: member.displayName, avatar: member.avatar, unread: 0 }
+                          openConversation(target as Conversation)
+                        }} style={{ cursor: 'pointer' }}>
                           <span className="memberAvatar" style={!member.avatar ? { background: avatarGradient(member.id) } : undefined}>
                             {member.avatar ? <img src={member.avatar} alt="" /> : member.displayName.slice(0, 1).toUpperCase()}
                           </span>
@@ -1536,7 +1542,9 @@ function App() {
                           {member.isAdmin && <em>Admin</em>}
                         </span>
                       ))}
-                      {groupDetail.truncated && <span className="moreMembers">+{groupDetail.totalMember - groupDetail.members.length}</span>}
+                      <button type="button" className="viewAllMembersBtn" onClick={() => setShowAllMembers(true)}>
+                        Xem tất cả {groupDetail.totalMember || groupDetail.members.length}
+                      </button>
                     </div>
                     {groupDetail.warning && <small className="warning">Thành viên tải một phần: {groupDetail.warning}</small>}
                   </>
@@ -1755,6 +1763,19 @@ function App() {
       </section>
 
       {/* Channel picker modal */}
+      {showAllMembers && selected?.type === 'group' && (
+        <GroupMembersModal
+          groupId={selected.id}
+          groupName={selected.name}
+          onOpenChat={(userId, displayName, avatar) => {
+            setShowAllMembers(false)
+            const existing = conversations.find((c) => c.id === userId)
+            const target = existing ?? { id: userId, type: 'user' as ThreadKind, name: displayName, avatar, unread: 0 }
+            openConversation(target as Conversation)
+          }}
+          onClose={() => setShowAllMembers(false)}
+        />
+      )}
       {showChannelPicker && selectedCategory && (() => {
         const currentCategory = categories.find((c) => c.id === selectedCategory)
         const existingIds = new Set(currentCategory?.threadIds ?? [])
