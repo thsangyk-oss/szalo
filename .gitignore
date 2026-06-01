@@ -27,9 +27,11 @@ electron/admin.html
 # Electron generated icons
 electron/icon.png
 electron/tray-icon.png
+electron/icon.ico
 electron/icon.ico.png
 electron/server-icon.png
 electron/server-tray-icon.png
+electron/server-icon.ico
 electron/server-icon.ico.png
 
 # Editor directories and files

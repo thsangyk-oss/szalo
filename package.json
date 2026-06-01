@@ -70,7 +70,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "electron/icon.png",
+      "icon": "electron/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -79,8 +79,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Szalo",
-      "installerIcon": "electron/icon.png",
-      "uninstallerIcon": "electron/icon.png"
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico"
     }
   }
 }

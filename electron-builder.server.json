@@ -10,7 +10,9 @@
     "electron/admin.html",
     "electron/server-icon.png",
     "electron/server-tray-icon.png",
+    "electron/server-icon.ico",
     "electron/server-icon.ico.png",
+    "electron/icon.ico",
     "electron/icon.png",
     "package.json",
     "node_modules/sharp/**/*",
@@ -29,7 +31,7 @@
       "nsis",
       "portable"
     ],
-    "icon": "electron/server-icon.png",
+    "icon": "electron/server-icon.ico",
     "signAndEditExecutable": false
   },
   "nsis": {
@@ -38,7 +40,7 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Szalo Server",
-    "installerIcon": "electron/server-icon.png",
-    "uninstallerIcon": "electron/server-icon.png"
+    "installerIcon": "electron/server-icon.ico",
+    "uninstallerIcon": "electron/server-icon.ico"
   }
 }
