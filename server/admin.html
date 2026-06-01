@@ -326,6 +326,21 @@
           <div id="paneNamed" class="stack hidden">
             <p class="keyHint" style="margin-top: 0;">Named Tunnel cho phép gắn subdomain trên domain riêng (ví dụ <code>szalo.example.com</code>). Cần authorize cloudflared một lần với Cloudflare account đã add domain.</p>
 
+            <!-- Auth status card -->
+            <div id="cfAuthStatus" style="padding: 12px 14px; background: var(--panel-2); border-radius: 9px;">
+              <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+                <strong style="font-size: 0.85rem;">Trạng thái Authorize</strong>
+                <button id="cfAuthRefresh" class="small" type="button">↻</button>
+              </div>
+              <div id="cfAuthBody" class="row" style="gap: 8px; flex-wrap: wrap;">
+                <span class="pill muted">Đang kiểm tra...</span>
+              </div>
+              <div id="cfTunnelList" style="margin-top: 10px; display: none;">
+                <small style="color: var(--muted);">Tunnel đã tạo:</small>
+                <div id="cfTunnelListBody" style="max-height: 120px; overflow: auto; font-size: 0.8rem; margin-top: 4px;"></div>
+              </div>
+            </div>
+
             <div class="row">
               <button id="authorizeBtn" type="button">🔓 Authorize cloudflared</button>
               <small style="color: var(--muted);">Chạy <code>cloudflared tunnel login</code> — mở trang Cloudflare để chọn domain.</small>
@@ -873,6 +888,7 @@
         updatePreview();
       }
       if (status.cloudflared) renderCloudflared(status.cloudflared);
+      if (status.auth) renderAuthStatus(status.auth);
     }
 
     function renderCloudflared(cf) {
@@ -911,6 +927,53 @@
         installBtn.textContent = "⬇ Tải cloudflared";
       }
     }
+
+    function renderAuthStatus(auth) {
+      const body = $("#cfAuthBody");
+      const listEl = $("#cfTunnelList");
+      const listBody = $("#cfTunnelListBody");
+
+      if (!auth) {
+        body.innerHTML = `<span class="pill muted">Đang kiểm tra...</span>`;
+        listEl.style.display = "none";
+        return;
+      }
+
+      if (auth.authorized) {
+        body.innerHTML = `<span class="pill ok">✔ Đã authorize</span>` +
+          (auth.domain ? `<span class="pill muted">Domain: ${escapeHtml(auth.domain)}</span>` : "") +
+          `<span class="pill muted">${escapeHtml(auth.certPath)}</span>`;
+      } else {
+        body.innerHTML = `<span class="pill warn">✘ Chưa authorize</span>` +
+          `<small style="color: var(--muted); margin-left: 8px;">Bấm "Authorize cloudflared" bên dưới để đăng nhập Cloudflare.</small>`;
+      }
+
+      if (auth.tunnels && auth.tunnels.length > 0) {
+        listEl.style.display = "block";
+        listBody.innerHTML = auth.tunnels.map((t) =>
+          `<div class="row" style="gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--border);">` +
+          `<span style="font-family: ui-monospace, monospace; color: var(--muted);">${escapeHtml(t.id.slice(0, 8))}…</span>` +
+          `<strong>${escapeHtml(t.name)}</strong>` +
+          `<span class="pill muted" style="font-size: 0.7rem;">${escapeHtml(t.connections)}</span>` +
+          `</div>`
+        ).join("");
+      } else {
+        listEl.style.display = "none";
+      }
+    }
+
+    async function refreshAuthStatus() {
+      try {
+        const auth = await adminJSON("/api/admin/tunnel/auth");
+        renderAuthStatus(auth);
+      } catch (error) {
+        if (error.message !== "unauthorized") {
+          $("#cfAuthBody").innerHTML = `<span class="pill err">${escapeHtml(error.message)}</span>`;
+        }
+      }
+    }
+
+    $("#cfAuthRefresh").addEventListener("click", refreshAuthStatus);
 
     function updatePreview() {
       const sub = $("#cfSubdomain").value.trim();

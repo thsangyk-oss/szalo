@@ -1046,7 +1046,10 @@ app.post("/api/admin/cloudflared/install", async (_req, res) => {
 
 // === Cloudflare tunnel admin ===
 app.get("/api/admin/tunnel/status", (_req, res) => {
-  res.json({ ...tunnel.getStatus(), config: db.getCloudflareConfig(), cloudflared: cloudflared.status() });
+  res.json({ ...tunnel.getStatus(), config: db.getCloudflareConfig(), cloudflared: cloudflared.status(), auth: tunnel.getAuthStatus() });
+});
+app.get("/api/admin/tunnel/auth", (_req, res) => {
+  res.json(tunnel.getAuthStatus());
 });
 app.post("/api/admin/tunnel/quick", async (_req, res) => {
   const status = await tunnel.startQuick(PORT);

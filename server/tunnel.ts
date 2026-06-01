@@ -12,9 +12,12 @@
  *
  * State của tunnel được broadcast qua EventEmitter để admin UI cập nhật realtime.
  */
-import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { spawn, execSync, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
 import type { Readable } from "node:stream";
 import { EventEmitter } from "node:events";
+import path from "node:path";
+import os from "node:os";
 
 export type TunnelMode = "quick" | "named";
 
@@ -187,6 +190,107 @@ export class TunnelManager extends EventEmitter {
 
   async listAuthorizedDomains(): Promise<string[]> {
     return [];
+  }
+
+  /**
+   * Check authorization status: does cert.pem exist? What domain is it for?
+   * Also list existing named tunnels if authorized.
+   */
+  getAuthStatus(): {
+    authorized: boolean;
+    certPath: string;
+    domain?: string;
+    zoneId?: string;
+    accountId?: string;
+    tunnels: Array<{ id: string; name: string; connections: string }>;
+  } {
+    const certPath = this.findCertPem();
+    if (!certPath || !existsSync(certPath)) {
+      return { authorized: false, certPath: "", tunnels: [] };
+    }
+
+    let domain: string | undefined;
+    let zoneId: string | undefined;
+    let accountId: string | undefined;
+
+    try {
+      const content = readFileSync(certPath, "utf8");
+      const tokenMatch = content.match(/-----BEGIN ARGO TUNNEL TOKEN-----\s*([\s\S]*?)\s*-----END ARGO TUNNEL TOKEN-----/);
+      if (tokenMatch) {
+        try {
+          const decoded = Buffer.from(tokenMatch[1].replace(/\s/g, ""), "base64").toString("utf8");
+          const parsed = JSON.parse(decoded) as { zoneID?: string; accountID?: string; apiToken?: string };
+          zoneId = parsed.zoneID;
+          accountId = parsed.accountID;
+          // Try to resolve zone name via Cloudflare API
+          if (parsed.apiToken && parsed.zoneID) {
+            domain = this.resolveZoneName(parsed.apiToken, parsed.zoneID);
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    } catch { /* can't read cert */ }
+
+    const tunnels = this.listTunnels();
+
+    return { authorized: true, certPath, domain, zoneId, accountId, tunnels };
+  }
+
+  private resolveZoneName(apiToken: string, zoneId: string): string | undefined {
+    // Synchronous HTTP call via execSync + curl — not ideal but this is called
+    // rarely (on admin page load / refresh) and keeps the method sync.
+    try {
+      const output = execSync(
+        `curl -s -H "Authorization: Bearer ${apiToken}" "https://api.cloudflare.com/client/v4/zones/${zoneId}"`,
+        { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 8000 },
+      ).toString("utf8");
+      const parsed = JSON.parse(output) as { result?: { name?: string } };
+      return parsed.result?.name;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private findCertPem(): string {
+    // cloudflared stores cert.pem in ~/.cloudflared/ by default
+    const candidates = [
+      path.join(os.homedir(), ".cloudflared", "cert.pem"),
+      path.join(process.env.USERPROFILE || os.homedir(), ".cloudflared", "cert.pem"),
+    ];
+    return candidates.find((p) => existsSync(p)) || "";
+  }
+
+  private listTunnels(): Array<{ id: string; name: string; connections: string }> {
+    let binary: string;
+    try { binary = this.resolveBinary(); } catch { return []; }
+    if (!binary) return [];
+    try {
+      const output = execSync(`"${binary}" tunnel list --output json`, {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        timeout: 10000,
+      }).toString("utf8");
+      const parsed = JSON.parse(output);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((t: { id?: string; name?: string; connections?: unknown[] }) => ({
+        id: String(t.id || ""),
+        name: String(t.name || ""),
+        connections: Array.isArray(t.connections) ? `${t.connections.length} conn` : "0 conn",
+      })).slice(0, 50);
+    } catch {
+      // Fallback: parse text output
+      try {
+        const output = execSync(`"${binary}" tunnel list`, {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          timeout: 10000,
+        }).toString("utf8");
+        const lines = output.split(/\r?\n/).filter((l) => /^[0-9a-f-]{36}\s/.test(l.trim()));
+        return lines.map((line) => {
+          const parts = line.trim().split(/\s{2,}/);
+          return { id: parts[0] || "", name: parts[1] || "", connections: parts[3] || "" };
+        }).slice(0, 50);
+      } catch { return []; }
+    }
   }
 
   async stop(): Promise<TunnelStatus> {
