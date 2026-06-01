@@ -21,6 +21,7 @@ import {
   LoginQRCallbackEventType,
   MuteAction,
   MuteDuration,
+  Reactions,
   ThreadType,
   Zalo,
   type API,
@@ -771,6 +772,20 @@ function normalizeIncoming(message: Message): ChatMessage {
   };
 }
 
+function applyUndo(undo: { threadId: string; msgId?: string | number; cliMsgId?: string | number }) {
+  const threadId = String(undo.threadId);
+  const list = messages.get(threadId);
+  if (!list) return;
+  const targetId = String(undo.msgId ?? undo.cliMsgId ?? "");
+  if (!targetId) return;
+  const before = list.length;
+  const filtered = list.filter((msg) => msg.id !== targetId);
+  if (filtered.length < before) {
+    messages.set(threadId, filtered);
+    schedulePersist();
+  }
+}
+
 function upsertMessage(message: ChatMessage) {
   const list = messages.get(message.threadId) ?? [];
   const isNew = !list.some((item) => item.id === message.id);
@@ -890,6 +905,15 @@ async function afterLogin(api: API) {
   api.listener.on("friend_event", (event) => {
     recordListenerEvent("friend_event", { isSelf: event.isSelf, type: event.type });
     io.emit("friend_event", event);
+  });
+  api.listener.on("reaction", (reaction) => {
+    recordListenerEvent("reaction", { threadId: reaction.threadId, isSelf: reaction.isSelf });
+    io.emit("reaction", reaction);
+  });
+  api.listener.on("undo", (undo) => {
+    recordListenerEvent("undo", { threadId: undo.threadId, isSelf: undo.isSelf });
+    applyUndo({ threadId: String(undo.threadId), msgId: (undo as { msgId?: string | number }).msgId, cliMsgId: (undo as { cliMsgId?: string | number }).cliMsgId });
+    io.emit("undo", undo);
   });
   api.listener.start({ retryOnClose: true });
   void refreshConversationControls()
@@ -1566,6 +1590,166 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
   res.json(threadMessages);
 });
 
+// === Rich messaging: reaction, undo (recall), sticker ===
+
+app.post("/api/messages/reaction", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, msgId, cliMsgId, icon } = req.body as {
+    threadId?: string; type?: unknown; msgId?: string; cliMsgId?: string; icon?: string;
+  };
+  if (!threadId || !isThreadKind(type) || !msgId) {
+    res.status(400).json({ error: "Missing threadId, type, msgId, or icon" });
+    return;
+  }
+  const reactionIcon = (icon && icon in Reactions) ? Reactions[icon as keyof typeof Reactions] : (icon || Reactions.HEART);
+  try {
+    const result = await zaloApi.addReaction(
+      reactionIcon as unknown as Parameters<typeof zaloApi.addReaction>[0],
+      { data: { msgId, cliMsgId: cliMsgId || msgId }, threadId, type: asThreadType(type) },
+    );
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.post("/api/messages/undo", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, msgId, cliMsgId } = req.body as {
+    threadId?: string; type?: unknown; msgId?: string; cliMsgId?: string;
+  };
+  if (!threadId || !isThreadKind(type) || (!msgId && !cliMsgId)) {
+    res.status(400).json({ error: "Missing threadId, type, or msgId/cliMsgId" });
+    return;
+  }
+  try {
+    const result = await zaloApi.undo(
+      { msgId: msgId || cliMsgId || "", cliMsgId: cliMsgId || msgId || "" },
+      threadId,
+      asThreadType(type),
+    );
+    // Remove from local cache immediately
+    applyUndo({ threadId, msgId, cliMsgId });
+    io.emit("undo", { threadId, msgId, cliMsgId, isSelf: true });
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.post("/api/messages/sticker", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, stickerId, cateId, stickerType } = req.body as {
+    threadId?: string; type?: unknown; stickerId?: number; cateId?: number; stickerType?: number;
+  };
+  if (!threadId || !isThreadKind(type) || !stickerId || !cateId) {
+    res.status(400).json({ error: "Missing threadId, type, stickerId, or cateId" });
+    return;
+  }
+  try {
+    const result = await zaloApi.sendSticker(
+      { id: stickerId, cateId, type: stickerType ?? 7 },
+      threadId,
+      asThreadType(type),
+    );
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.get("/api/stickers", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const keyword = typeof req.query.q === "string" ? req.query.q : "";
+    if (keyword) {
+      const result = await zaloApi.searchSticker(keyword);
+      res.json(result);
+    } else {
+      // getStickers requires a keyword — return empty for no-query
+      res.json([]);
+    }
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Reactions enum for client ===
+app.get("/api/reactions", (_req, res) => {
+  res.json(Object.entries(Reactions).map(([key, value]) => ({ key, icon: value })));
+});
+
+// === Find user by phone / username ===
+app.get("/api/users/find", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const phone = typeof req.query.phone === "string" ? req.query.phone.trim() : "";
+  const username = typeof req.query.username === "string" ? req.query.username.trim() : "";
+  try {
+    if (phone) {
+      const result = await zaloApi.findUser(phone);
+      res.json(result);
+    } else if (username) {
+      const result = await zaloApi.findUserByUsername(username);
+      res.json(result);
+    } else {
+      res.status(400).json({ error: "Cần phone hoặc username" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Friend requests ===
+app.post("/api/friends/request", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { userId, message } = req.body as { userId?: string; message?: string };
+  if (!userId) {
+    res.status(400).json({ error: "Missing userId" });
+    return;
+  }
+  try {
+    const result = await zaloApi.sendFriendRequest(userId, message || "");
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Online status ===
+app.get("/api/friends/online", async (_req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.getFriendOnlines();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Search messages across all threads ===
+app.get("/api/search/messages", (req, res) => {
+  const query = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+  if (!query || query.length < 2) {
+    res.status(400).json({ error: "Query phải có ít nhất 2 ký tự" });
+    return;
+  }
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const results: Array<ChatMessage & { conversationName?: string }> = [];
+  for (const [threadId, list] of messages) {
+    const conversation = conversations.get(threadId);
+    for (const msg of list) {
+      if (results.length >= limit) break;
+      const searchable = `${msg.senderName ?? ""} ${msg.text} ${msg.attachments.map((a) => a.title ?? "").join(" ")}`.toLowerCase();
+      if (searchable.includes(query)) {
+        results.push({ ...msg, conversationName: conversation?.name });
+      }
+    }
+    if (results.length >= limit) break;
+  }
+  results.sort((a, b) => b.timestamp - a.timestamp);
+  res.json(results);
+});
+
 app.post("/api/events/typing", async (req, res) => {
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   const { threadId, type } = req.body as { threadId: string; type: ThreadKind };
@@ -1632,7 +1816,23 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
   try {
     const messageText = text ?? "";
     const attachments = files.map((file) => file.path);
-    const payload: string | MessageContent = attachments.length ? { msg: messageText, attachments } : messageText;
+
+    // Rich message options from form body (JSON-encoded fields)
+    let quote: MessageContent["quote"] | undefined;
+    let mentions: MessageContent["mentions"] | undefined;
+    let styles: MessageContent["styles"] | undefined;
+    let ttl: number | undefined;
+    try {
+      if (req.body.quote) quote = typeof req.body.quote === "string" ? JSON.parse(req.body.quote) : req.body.quote;
+      if (req.body.mentions) mentions = typeof req.body.mentions === "string" ? JSON.parse(req.body.mentions) : req.body.mentions;
+      if (req.body.styles) styles = typeof req.body.styles === "string" ? JSON.parse(req.body.styles) : req.body.styles;
+      if (req.body.ttl) ttl = Number(req.body.ttl) || undefined;
+    } catch { /* ignore malformed rich fields */ }
+
+    const hasRichFields = Boolean(quote || mentions || styles || ttl || attachments.length);
+    const payload: string | MessageContent = hasRichFields
+      ? { msg: messageText, attachments: attachments.length ? attachments : undefined, quote, mentions, styles, ttl }
+      : messageText;
     const result = await zaloApi.sendMessage(payload, threadId, asThreadType(type));
     const sent: ChatMessage = {
       id: String(result.message?.msgId ?? Date.now()),
