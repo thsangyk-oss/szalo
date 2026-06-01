@@ -1587,6 +1587,37 @@ span.fileAttachment {
   display: block;
 }
 
+/* Format toolbar above the composeRow */
+.formatToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 8px;
+  font-size: 13px;
+}
+.formatBtn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+}
+.formatBtn:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
+.formatHint {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+@media (max-width: 720px) {
+  .formatHint { display: none; }
+}
+
 .fileQueue {
   display: flex;
   flex-wrap: wrap;

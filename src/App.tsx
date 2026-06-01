@@ -13,6 +13,7 @@ import MentionPicker, { type GroupMember } from './MentionPicker'
 import GroupMembersModal from './GroupMembersModal'
 import StickerPicker from './StickerPicker'
 import RemindersPanel from './RemindersPanel'
+import { parseStyles, applyFormatting } from './formatting'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -910,6 +911,23 @@ function App() {
     if (fileInput.current) fileInput.current.value = ''
   }
 
+  /**
+   * Wrap the textarea selection (or insert empty markers) with a Markdown
+   * formatting marker. Used by the format toolbar above the composer.
+   */
+  function wrapFormat(marker: '**' | '*' | '__' | '~~') {
+    const textarea = composerRef.current
+    if (!textarea) return
+    const start = textarea.selectionStart ?? text.length
+    const end = textarea.selectionEnd ?? text.length
+    const next = applyFormatting(text, start, end, marker)
+    setText(next.text)
+    requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(next.selectionStart, next.selectionEnd)
+    })
+  }
+
   async function sendMessage() {
     reportClientEvent('send-click', {
       selected: selected?.id,
@@ -938,10 +956,16 @@ function App() {
     }
     setSending(true)
     const draftText = text
+    // Parse markdown-like formatting (**bold**, *italic*, __underline__, ~~strike~~)
+    // and convert to zca-js styles[]. Sent text has the markers stripped.
+    const { text: cleanText, styles } = parseStyles(draftText)
     const form = new FormData()
     form.append('threadId', selected.id)
     form.append('type', selected.type)
-    form.append('text', draftText)
+    form.append('text', cleanText)
+    if (styles.length > 0) {
+      form.append('styles', JSON.stringify(styles))
+    }
     if (replyTo) {
       const raw = replyTo.raw as { data?: Record<string, unknown> } | undefined
       form.append('quote', JSON.stringify({
@@ -1765,6 +1789,13 @@ function App() {
                   <button type="button" onClick={() => removeQueuedFile(file.name, index)} title="Remove file"><X size={13} /></button>
                 </span>
               ))}</div>}
+              <div className="formatToolbar">
+                <button type="button" className="formatBtn" onClick={() => wrapFormat('**')} title="Đậm (Ctrl+B)"><strong>B</strong></button>
+                <button type="button" className="formatBtn" onClick={() => wrapFormat('*')} title="Nghiêng (Ctrl+I)"><em>I</em></button>
+                <button type="button" className="formatBtn" onClick={() => wrapFormat('__')} title="Gạch chân (Ctrl+U)"><span style={{ textDecoration: 'underline' }}>U</span></button>
+                <button type="button" className="formatBtn" onClick={() => wrapFormat('~~')} title="Gạch ngang"><s>S</s></button>
+                <small className="formatHint">**đậm** *nghiêng* __gạch chân__ ~~gạch ngang~~</small>
+              </div>
               <form className="composeRow" onSubmit={(event) => {
                 event.preventDefault()
                 sendMessage()
@@ -1776,6 +1807,20 @@ function App() {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
                     sendMessage()
+                    return
+                  }
+                  // Ctrl+B/I/U formatting shortcuts
+                  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
+                    if (event.key === 'b' || event.key === 'B') {
+                      event.preventDefault()
+                      wrapFormat('**')
+                    } else if (event.key === 'i' || event.key === 'I') {
+                      event.preventDefault()
+                      wrapFormat('*')
+                    } else if (event.key === 'u' || event.key === 'U') {
+                      event.preventDefault()
+                      wrapFormat('__')
+                    }
                   }
                 }} />
                 <button className="send" type="submit" disabled={sending || status.state !== 'online'} title={sending ? 'Đang gửi' : 'Gửi tin'}><Send size={18} /><span>Gửi</span></button>
