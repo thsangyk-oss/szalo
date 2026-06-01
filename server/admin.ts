@@ -3,7 +3,7 @@
  * login, expires them after a TTL, and exposes a middleware-friendly verify.
  *
  * Tokens live only in memory: restarting the server logs every admin out.
- * That's fine for an admin panel — the key + password persist in db.json.
+ * That's fine for an admin panel — the key + password persist in zalodata.json.
  */
 import { randomBytes } from "node:crypto";
 

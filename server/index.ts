@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -64,14 +64,33 @@ const ROOT = process.cwd();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(ROOT, ".zalo-manager");
+
+function resolveDbFile(): string {
+  if (process.env.DB_FILE) return path.resolve(process.env.DB_FILE);
+
+  const currentFile = path.join(DATA_DIR, "zalodata.json");
+  const legacyFile = path.join(DATA_DIR, "db.json");
+  if (!existsSync(currentFile) && existsSync(legacyFile)) {
+    try {
+      renameSync(legacyFile, currentFile);
+      console.log(`Migrated ${path.basename(legacyFile)} to ${path.basename(currentFile)}.`);
+    } catch (error) {
+      console.warn(`Could not migrate ${legacyFile} to ${currentFile}: ${errorMessage(error)}. Using legacy file for this run.`);
+      return legacyFile;
+    }
+  }
+
+  return currentFile;
+}
+
 const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
-  : path.join(DATA_DIR, "db.json");
+  : resolveDbFile();
 const ACTIVITY_FILE = path.join(DATA_DIR, "activity.json");
 const CATEGORIES_FILE = path.join(DATA_DIR, "categories.json");
 const SESSION_FILE = path.join(DATA_DIR, "session.json");
 
-// Server config (API keys + admin password) lives in db.json — generated on
+// Server config (API keys + admin password) lives in zalodata.json — generated on
 // first boot. Admin password defaults to "123456"; the user is expected to
 // change it via the admin UI.
 const db = new Database(DB_FILE);
@@ -289,7 +308,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  // Regular API: gated by a key from db.json. Multi-key — admin can disable
+  // Regular API: gated by a key from zalodata.json. Multi-key — admin can disable
   // a single key without affecting other clients.
   const provided = readApiKey(req);
   const entry = provided ? db.findApiKey(provided) : undefined;

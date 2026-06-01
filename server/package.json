@@ -1,6 +1,6 @@
 {
   "name": "szalo-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Szalo backend — fixed Zalo account bridge with REST + Socket.IO API",
   "main": "index.ts",

@@ -29,7 +29,7 @@ npm install
 npm run dev                # tsx watch on port 13113 by default
 ```
 
-On first boot the server creates `db.json` (under `DATA_DIR`, default `.zalo-manager/`) with:
+On first boot the server creates `zalodata.json` (under `DATA_DIR`, default `.zalo-manager/`) with:
 
 - A freshly generated **API key** (32 random bytes, hex)
 - The default **admin password** `123456` (scrypt-hashed)
@@ -50,10 +50,10 @@ Open `http://localhost:13113/admin` and log in with `123456`. The admin panel ha
 | --- | --- | --- |
 | `PORT` | `13113` | Any 1–65535. (`113113` isn't a valid TCP port.) |
 | `CLIENT_ORIGIN` | `*` | Or a comma-separated allow-list. `*` is the easy choice for desktop clients. |
-| `DATA_DIR` | `./.zalo-manager` | Where session, cache, uploads, and `db.json` live. |
-| `DB_FILE` | `<DATA_DIR>/db.json` | Override the JSON store path. |
+| `DATA_DIR` | `./.zalo-manager` | Where session, cache, uploads, and `zalodata.json` live. |
+| `DB_FILE` | `<DATA_DIR>/zalodata.json` | Override the JSON store path. |
 
-The session, conversations cache, uploads, `db.json`, and `activity.json` are persisted under `DATA_DIR`. Logging in once survives restarts; deleting `db.json` regenerates the API keys and resets the admin password to `123456`.
+The session, conversations cache, uploads, `zalodata.json`, and `activity.json` are persisted under `DATA_DIR`. Logging in once survives restarts; deleting `zalodata.json` regenerates the API keys and resets the admin password to `123456`.
 
 ### Auth model — two distinct credentials
 

@@ -32,6 +32,8 @@ process.on('unhandledRejection', (reason) => {
   logToFile('UNHANDLED', String(reason))
 })
 
+app.disableHardwareAcceleration()
+
 const isDev = process.env.NODE_ENV === 'development'
 const DEV_URL = process.env.SZALO_DEV_URL || 'http://localhost:5173'
 const ICON_PATH = path.join(__dirname, 'icon.png')
@@ -64,6 +66,57 @@ function loadRenderer(window, hash = '') {
     const filePath = path.join(getRendererBuildDir(), 'index.html')
     window.loadFile(filePath, hash ? { hash: hash.startsWith('#') ? hash.slice(1) : hash } : undefined)
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function showRendererLoadError(window, title, details) {
+  if (!window || window.isDestroyed()) return
+  const body = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101410; color: #edf3ec; font-family: Segoe UI, Arial, sans-serif; }
+          main { width: min(680px, calc(100vw - 48px)); line-height: 1.5; }
+          h1 { margin: 0 0 12px; font-size: 24px; }
+          pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #171d17; border: 1px solid #2b382d; border-radius: 8px; padding: 14px; color: #c9d6c9; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>${escapeHtml(title)}</h1>
+          <p>Renderer failed to load. Please send this screen and <code>%TEMP%\\szalo.log</code>.</p>
+          <pre>${escapeHtml(details)}</pre>
+        </main>
+      </body>
+    </html>`
+  window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(body)}`)
+}
+
+function attachWindowDiagnostics(window, name) {
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    logToFile('DID_FAIL_LOAD', name, { errorCode, errorDescription, validatedURL, isMainFrame })
+    if (isMainFrame) {
+      showRendererLoadError(window, 'Szalo load error', `${errorCode} ${errorDescription}\n${validatedURL || ''}`)
+    }
+  })
+
+  window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    logToFile('RENDERER_CONSOLE', name, { level, message, line, sourceId })
+  })
+
+  window.webContents.on('render-process-gone', (_event, details) => {
+    logToFile('RENDER_PROCESS_GONE', name, details)
+    showRendererLoadError(window, 'Szalo renderer crashed', JSON.stringify(details, null, 2))
+  })
 }
 
 function normalizeBubbleThread(data) {
@@ -158,6 +211,8 @@ function createWindow() {
     },
     show: false,
   })
+
+  attachWindowDiagnostics(mainWindow, 'main')
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()

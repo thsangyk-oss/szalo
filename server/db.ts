@@ -89,7 +89,7 @@ export class Database {
         const raw = readFileSync(this.file, "utf8");
         return this.normalize(JSON.parse(raw) as Record<string, unknown>);
       } catch (error) {
-        console.warn(`db.json unreadable (${error instanceof Error ? error.message : String(error)}) — recreating.`);
+        console.warn(`${path.basename(this.file)} unreadable (${error instanceof Error ? error.message : String(error)}) — recreating.`);
       }
     }
     const fresh = this.makeFresh();
