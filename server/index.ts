@@ -1436,7 +1436,13 @@ app.get("/api/groups/:groupId", async (req, res) => {
     io.emit("conversations", sortedConversations());
   }
 
+  // Zalo's getGroupInfo returns members in `memVerList` (array of
+  // "userId_version" strings), not `memberIds` or `currentMems` (those are
+  // empty in current API responses).
+  const memVerList = (group as { memVerList?: string[] }).memVerList ?? [];
+  const idsFromVerList = memVerList.map((entry) => entry.split("_")[0]).filter(Boolean);
   const memberIds = Array.from(new Set([
+    ...idsFromVerList,
     ...(group.memberIds ?? []),
     ...(group.currentMems ?? []).map((member) => member.id),
   ].map(String).filter(Boolean)));

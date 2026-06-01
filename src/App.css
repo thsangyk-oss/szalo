@@ -1563,6 +1563,7 @@ span.fileAttachment {
 
 /* ===== COMPOSER ===== */
 .composer {
+  position: relative;  /* anchor for absolute pickers (mention, quick reply, sticker) */
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);
   padding: 12px 16px;
