@@ -5,6 +5,8 @@ import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
 import SettingsScreen from './SettingsScreen'
+import MessageActions from './MessageActions'
+import GlobalSearch from './GlobalSearch'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -63,12 +65,14 @@ type ChatMessage = {
   id: string
   threadId: string
   type: ThreadKind
+  senderId?: string
   senderName?: string
   text: string
   timestamp: number
   isSelf: boolean
   deliveryStatus?: DeliveryStatus
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string; size?: string }>
+  raw?: unknown
 }
 
 type TypingEvent = {
@@ -335,6 +339,8 @@ function App() {
   const [dragActive, setDragActive] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null)
@@ -545,6 +551,17 @@ function App() {
     socket.on('group_event', handleGroupEvent)
     socket.on('friend_event', handleFriendEvent)
     socket.on('typing', handleTyping)
+    socket.on('undo', (data: { threadId?: string; msgId?: string; cliMsgId?: string }) => {
+      const targetId = String(data.msgId ?? data.cliMsgId ?? '')
+      if (targetId) setMessages((prev) => prev.filter((m) => m.id !== targetId))
+    })
+    socket.on('reaction', (data: { threadId?: string }) => {
+      // For now just show a subtle notice; full reaction display on messages
+      // would require storing reactions per-message (future enhancement).
+      if (data.threadId && selectedRef.current?.id === data.threadId) {
+        setNotice('Có reaction mới')
+      }
+    })
     window.addEventListener('error', handleBrowserError)
     window.addEventListener('unhandledrejection', handleUnhandledRejection)
     return () => {
@@ -557,6 +574,8 @@ function App() {
       socket.off('group_event', handleGroupEvent)
       socket.off('friend_event', handleFriendEvent)
       socket.off('typing', handleTyping)
+      socket.off('undo')
+      socket.off('reaction')
       cleanupOpenThread?.()
       window.removeEventListener('error', handleBrowserError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
@@ -855,14 +874,28 @@ function App() {
     form.append('threadId', selected.id)
     form.append('type', selected.type)
     form.append('text', draftText)
+    if (replyTo) {
+      const raw = replyTo.raw as { data?: Record<string, unknown> } | undefined
+      form.append('quote', JSON.stringify({
+        content: raw?.data?.content ?? replyTo.text,
+        msgType: raw?.data?.msgType ?? "chat.text",
+        propertyExt: raw?.data?.propertyExt ?? {},
+        uidFrom: replyTo.senderId || "",
+        msgId: replyTo.id,
+        cliMsgId: String(raw?.data?.cliMsgId ?? replyTo.id),
+        ts: String(replyTo.timestamp),
+        ttl: 0,
+      }))
+    }
     files.forEach((file) => form.append('files', file))
     try {
       setNotice('Đang gửi tin...')
-      reportClientEvent('send-request', { threadId: selected.id, type: selected.type, textLength: draftText.length, fileCount: files.length })
+      reportClientEvent('send-request', { threadId: selected.id, type: selected.type, textLength: draftText.length, fileCount: files.length, hasQuote: Boolean(replyTo) })
       const response = await apiJson<{ message?: ChatMessage }>('/api/messages', { method: 'POST', body: form })
       if (response.message) setMessages((current) => appendMessage(current, response.message as ChatMessage))
       setText('')
       setFiles([])
+      setReplyTo(null)
       if (fileInput.current) fileInput.current.value = ''
       setNotice('Đã gửi')
       reportClientEvent('send-success', { threadId: selected.id, hasMessage: Boolean(response.message) })
@@ -993,6 +1026,17 @@ function App() {
           onSaved={() => { setShowSettings(false); setConfigured(true) }}
         />
       )}
+      {showGlobalSearch && (
+        <GlobalSearch
+          onOpenThread={(threadId, type) => {
+            setShowGlobalSearch(false)
+            const existing = conversations.find((c) => c.id === threadId)
+            const target = existing ?? { id: threadId, type, name: threadId, unread: 0 }
+            openConversation(target as Conversation)
+          }}
+          onClose={() => setShowGlobalSearch(false)}
+        />
+      )}
       {/* === ICON RAIL === */}
       <nav className="iconRail">
         <img className="appLogo" src="/szalo-icon.png" alt="Szalo" />
@@ -1044,6 +1088,9 @@ function App() {
           <Activity size={20} />
         </button>
         <span className="railSpacer" />
+        <button className="railButton" onClick={() => setShowGlobalSearch(true)} title="Tìm tin nhắn toàn cục">
+          <Search size={20} />
+        </button>
         <button className="railButton" onClick={() => setShowSettings(true)} title="Cài đặt server">
           <SettingsIcon size={20} />
         </button>
@@ -1487,7 +1534,24 @@ function App() {
               {messageFilter && filteredMessages.length === 0 && <div className="loading">Không có kết quả</div>}
               {filteredMessages.map((message) => (
                 <article key={message.id} className={message.isSelf ? 'message self' : 'message'}>
-                  <span className="sender">{message.isSelf ? 'Bạn' : message.senderName || message.threadId}</span>
+                  <span
+                    className={!message.isSelf && selected?.type === 'group' ? 'sender clickable' : 'sender'}
+                    onClick={() => {
+                      if (!message.isSelf && selected?.type === 'group' && message.senderId) {
+                        // Click sender name in group → open 1-1 chat with that person
+                        const existing = conversations.find((c) => c.id === message.senderId)
+                        const target = existing ?? {
+                          id: message.senderId!,
+                          type: 'user' as ThreadKind,
+                          name: message.senderName || message.senderId!,
+                          unread: 0,
+                        }
+                        openConversation(target as Conversation)
+                      }
+                    }}
+                  >
+                    {message.isSelf ? 'Bạn' : message.senderName || message.threadId}
+                  </span>
                   {message.text && <p>{message.text}</p>}
                   {message.attachments.map((attachment, index) => {
                     const url = attachmentUrl(attachment.href, attachment.title)
@@ -1521,10 +1585,22 @@ function App() {
                       <span className="receipt"><CheckCheck size={13} /> {deliveryLabel(message.deliveryStatus)}</span>
                     )}
                   </span>
+                  <MessageActions
+                    message={message}
+                    onReply={(msg) => setReplyTo(msg)}
+                    onUndone={(id) => setMessages((prev) => prev.filter((m) => m.id !== id))}
+                  />
                 </article>
               ))}
               <div ref={endRef} />
             </div>
+            {replyTo && (
+              <div className="replyPreview">
+                <strong>{replyTo.isSelf ? 'Bạn' : replyTo.senderName || '?'}</strong>
+                <span>{replyTo.text || (replyTo.attachments.length ? 'Tệp đính kèm' : 'Tin nhắn')}</span>
+                <button type="button" onClick={() => setReplyTo(null)} title="Hủy trả lời"><X size={14} /></button>
+              </div>
+            )}
             <footer
               className={dragActive ? 'composer dragActive' : 'composer'}
               onDragEnter={(event) => {
