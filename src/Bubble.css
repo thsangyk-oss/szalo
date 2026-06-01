@@ -1,0 +1,465 @@
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+html.bubbleDockPage {
+  width: 72px !important;
+  height: 72px !important;
+  min-width: 72px;
+  min-height: 72px;
+  max-width: 72px;
+  max-height: 72px;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+body.bubbleDockPage,
+body.bubbleDockPage #root {
+  position: fixed;
+  inset: 0;
+  width: 72px !important;
+  height: 72px !important;
+  min-width: 72px;
+  min-height: 72px;
+  max-width: 72px;
+  max-height: 72px;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+body.bubbleDockPage .dockRoot {
+  position: fixed;
+  inset: 0;
+  width: 72px !important;
+  height: 72px !important;
+  min-width: 72px;
+  min-height: 72px;
+  max-width: 72px;
+  max-height: 72px;
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+  contain: strict;
+  isolation: isolate;
+}
+
+/* ===== BUBBLE DOCK ===== */
+.dockCircle {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 50%;
+  background: #1e1a3a;
+  border: 3px solid #7c5cff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  transition: border-color 0.15s;
+  user-select: none;
+  overflow: hidden;
+  touch-action: none;
+  contain: strict;
+}
+
+.dockCircle:hover {
+  border-color: #9070ff;
+}
+
+.dockCircle.dragging {
+  cursor: grabbing;
+}
+
+.dockAvatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.dockLetter {
+  font-size: 20px;
+  font-weight: 700;
+  color: #7c5cff;
+}
+
+.dockBadge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ff4d6a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.dockCount {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #252b38;
+  color: #e4e8f0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  border: 1px solid #7c5cff;
+}
+
+/* ===== BUBBLE PANEL: chat window ===== */
+.panelRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #14171e;
+  overflow: hidden;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  color: #e4e8f0;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #1a1e28;
+  border-bottom: 1px solid #2a3040;
+  -webkit-app-region: drag;
+  gap: 8px;
+}
+
+.panelHeaderTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  color: #e4e8f0;
+}
+
+.panelHeaderTitle strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelHeaderAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #252b38;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.panelHeaderAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.panelBackBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: #252b38;
+  color: #8b95a8;
+  cursor: pointer;
+  font: inherit;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.panelBackBtn:hover {
+  background: #2a3040;
+  color: #e4e8f0;
+}
+
+.panelActions {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.panelActions button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: #252b38;
+  color: #8b95a8;
+  cursor: pointer;
+  font: inherit;
+  transition: all 0.15s;
+}
+
+.panelActions button:hover {
+  background: #2a3040;
+  color: #e4e8f0;
+}
+
+/* Thread list */
+.panelList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.panelListItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.panelListItem:hover {
+  background: #1f2430;
+}
+
+.panelListMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #e4e8f0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.panelListAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #252b38;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.panelListAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.panelListName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.panelListBadge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #7c5cff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.panelListRemove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5c6578;
+  cursor: pointer;
+  margin-right: 4px;
+  font: inherit;
+}
+
+.panelListRemove:hover {
+  background: rgba(255, 77, 106, 0.15);
+  color: #ff4d6a;
+}
+
+.panelEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: #5c6578;
+  padding: 32px 24px;
+  height: 100%;
+}
+
+.panelEmpty p {
+  margin: 0;
+  font-size: 13px;
+  color: #8b95a8;
+}
+
+.panelEmpty small {
+  font-size: 11px;
+}
+
+.panelLoading {
+  align-self: center;
+  color: #5c6578;
+  font-size: 12px;
+  padding: 12px;
+}
+
+.pMsgImage {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 8px;
+  margin-top: 4px;
+  cursor: pointer;
+  object-fit: cover;
+}
+
+.pAttach {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #5c6578;
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+/* Messages */
+.panelMessages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.pMsg {
+  max-width: 85%;
+  padding: 8px 11px;
+  border-radius: 12px;
+  background: #1a1e28;
+  border: 1px solid #2a3040;
+  font-size: 13px;
+  color: #e4e8f0;
+}
+
+.pMsg.self {
+  align-self: flex-end;
+  background: #1e1a3a;
+  border-color: #3d2f7a;
+}
+
+.pMsg p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.pSender {
+  display: block;
+  font-size: 10px;
+  color: #7c5cff;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+/* Composer */
+.panelComposer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #2a3040;
+  background: #1a1e28;
+}
+
+.panelComposer input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  background: #14171e;
+  color: #e4e8f0;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.panelComposer input:focus {
+  border-color: #7c5cff;
+}
+
+.panelComposer input::placeholder {
+  color: #5c6578;
+}
+
+.panelComposer button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #7c5cff;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s;
+}
+
+.panelComposer button:hover:not(:disabled) {
+  background: #9070ff;
+}
+
+.panelComposer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
