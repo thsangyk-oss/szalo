@@ -161,6 +161,10 @@ type Category = {
 
 const CATEGORY_COLORS = ['#7c5cff', '#ff4d6a', '#34d399', '#fbbf24', '#3b82f6', '#f97316', '#ec4899', '#06b6d4']
 
+// Categories are now stored server-side keyed by the Zalo account, so logging
+// into the same account on any machine restores the same channels. We keep a
+// localStorage copy as an offline cache / first-paint value, but the server is
+// authoritative once the account is known.
 function loadCategories(): Category[] {
   try {
     const raw = localStorage.getItem('zalo-categories')
@@ -168,8 +172,10 @@ function loadCategories(): Category[] {
   } catch { return [] }
 }
 
-function saveCategories(categories: Category[]) {
-  localStorage.setItem('zalo-categories', JSON.stringify(categories))
+function cacheCategories(categories: Category[]) {
+  try {
+    localStorage.setItem('zalo-categories', JSON.stringify(categories))
+  } catch { /* ignore quota */ }
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -337,6 +343,7 @@ function App() {
   const [userDetailLoading, setUserDetailLoading] = useState(false)
   const lastTypingRef = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const conversationsRef = useRef<Conversation[]>([])
@@ -579,6 +586,34 @@ function App() {
       .then(setConversations)
       .catch((error: Error) => setNotice(error.message))
   }, [configured, status.state])
+
+  // Load server-side categories for the logged-in Zalo account. This is what
+  // makes channels follow the account across machines — on login we pull the
+  // saved grouping and replace the local cache with it.
+  useEffect(() => {
+    if (!configured || status.state !== 'online') return
+    apiJson<{ selfId: string; categories: Category[] }>('/api/categories')
+      .then((data) => {
+        if (Array.isArray(data.categories)) {
+          setCategories(data.categories)
+          cacheCategories(data.categories)
+        }
+      })
+      .catch(() => undefined)
+  }, [configured, status.state, status.selfId])
+
+  // Live category updates from other clients on the same account.
+  useEffect(() => {
+    if (!configured || !socket) return
+    const handleCategories = (data: { selfId: string; categories: Category[] }) => {
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories)
+        cacheCategories(data.categories)
+      }
+    }
+    socket.on('categories', handleCategories)
+    return () => { socket.off('categories', handleCategories) }
+  }, [configured, socket])
 
   async function startLogin() {
     try {
@@ -838,6 +873,10 @@ function App() {
       setText(draftText)
     } finally {
       setSending(false)
+      // Refocus the composer so the user can keep typing/sending without
+      // clicking back into it. requestAnimationFrame waits for the textarea to
+      // re-enable after `sending` flips false.
+      requestAnimationFrame(() => composerRef.current?.focus())
     }
   }
 
@@ -865,19 +904,32 @@ function App() {
     setShowNotifications(false)
   }
 
+  // Update categories everywhere: React state, localStorage cache, and the
+  // server (keyed by Zalo account). Server is best-effort — offline edits still
+  // persist locally and sync next time.
+  function persistCategories(next: Category[]) {
+    setCategories(next)
+    cacheCategories(next)
+    if (configured && status.state === 'online') {
+      apiJson('/api/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: next }),
+      }).catch((error) => reportClientEvent('categories-save-error', { error: error instanceof Error ? error.message : String(error) }))
+    }
+  }
+
   function addCategory() {
     if (!newCategoryName.trim()) return
     const next = [...categories, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: newCategoryName.trim(), color: newCategoryColor, threadIds: [] }]
-    setCategories(next)
-    saveCategories(next)
+    persistCategories(next)
     setNewCategoryName('')
     setNewCategoryColor(CATEGORY_COLORS[(next.length) % CATEGORY_COLORS.length])
   }
 
   function deleteCategory(id: string) {
     const next = categories.filter((c) => c.id !== id)
-    setCategories(next)
-    saveCategories(next)
+    persistCategories(next)
     if (selectedCategory === id) setSelectedCategory(null)
   }
 
@@ -887,8 +939,7 @@ function App() {
       const has = c.threadIds.includes(threadId)
       return { ...c, threadIds: has ? c.threadIds.filter((t) => t !== threadId) : [...c.threadIds, threadId] }
     })
-    setCategories(next)
-    saveCategories(next)
+    persistCategories(next)
   }
 
   function bulkAddToCategory(categoryId: string, threadIds: string[]) {
@@ -897,8 +948,7 @@ function App() {
       const merged = Array.from(new Set([...c.threadIds, ...threadIds]))
       return { ...c, threadIds: merged }
     })
-    setCategories(next)
-    saveCategories(next)
+    persistCategories(next)
   }
 
   function openChannelPicker() {
@@ -1502,7 +1552,7 @@ function App() {
               }}>
                 <input ref={fileInput} type="file" multiple hidden onChange={(event) => addQueuedFiles(event.target.files ?? [], 'picker')} />
                 <button type="button" className="attachButton" onClick={() => fileInput.current?.click()} title="Đính kèm file"><Paperclip size={18} /></button>
-                <textarea value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
+                <textarea ref={composerRef} value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
                     sendMessage()

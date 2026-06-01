@@ -161,6 +161,9 @@ export function BubbleDock() {
   useEffect(() => {
     if (!socket || !isConfigured()) return
     const handleConversations = (items: Conversation[]) => {
+      // Ignore empty snapshots (they arrive briefly on socket reconnect before
+      // the server re-sends the full list) so the badge doesn't flicker off.
+      if (items.length === 0) return
       setUnreadMap(unreadByConversation(items))
       setThreads((current) => syncThreadsWithConversations(current, items))
     }
@@ -256,6 +259,7 @@ export function BubblePanel() {
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
   const [socket, setSocket] = useState<Socket | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     document.body.classList.add('bubblePanelPage')
@@ -281,6 +285,7 @@ export function BubblePanel() {
   useEffect(() => {
     if (!socket || !isConfigured()) return
     const handleConversations = (items: Conversation[]) => {
+      if (items.length === 0) return
       const byId = new Map(items.map((item) => [item.id, item]))
       setUnreadMap(unreadByConversation(items))
       setThreads((current) => syncThreadsWithConversations(current, items))
@@ -346,11 +351,18 @@ export function BubblePanel() {
     try {
       const response = await apiJson<{ message?: ChatMessage }>('/api/messages', { method: 'POST', body: form })
       if (response.message) {
-        setMessages((prev) => [...prev, response.message as ChatMessage])
+        // Dedupe: the socket "message" event (selfListen) can arrive before this
+        // POST resolves and already add the message, so guard against a double.
+        const sent = response.message
+        setMessages((prev) => prev.some((m) => m.id === sent.id) ? prev : [...prev, sent])
       }
       setText('')
     } catch { /* ignore */ }
-    finally { setSending(false) }
+    finally {
+      setSending(false)
+      // Keep the cursor in the composer so the user can fire off messages back to back.
+      inputRef.current?.focus()
+    }
   }
 
   return (
@@ -436,7 +448,7 @@ export function BubblePanel() {
             <div ref={endRef} />
           </div>
           <form className="panelComposer" onSubmit={(e) => { e.preventDefault(); sendMessage() }}>
-            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nhập tin nhắn..." disabled={sending} autoFocus />
+            <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} placeholder="Nhập tin nhắn..." autoFocus />
             <button type="submit" disabled={sending || !text.trim()}><Send size={14} /></button>
           </form>
         </>

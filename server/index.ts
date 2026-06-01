@@ -15,6 +15,7 @@ import { Database } from "./db";
 import { AdminSessions } from "./admin";
 import { ActivityLog, type ActivityEvent } from "./activity";
 import { CloudflaredManager } from "./cloudflared";
+import { CategoryStore } from "./categories";
 import {
   AvatarSize,
   LoginQRCallbackEventType,
@@ -52,6 +53,10 @@ const SOCKET_CORS = CLIENT_ORIGIN_RAW.trim() === "*"
   : { origin: CORS_OPTIONS.origin as string[], credentials: true };
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+// Keep a deep per-thread history so the cache builds up over time. zca-js has
+// no user (1-1) history API, so realtime-captured messages are all we get for
+// DMs — retaining more of them is the main lever for a useful CRM history.
+const MAX_THREAD_MESSAGES = 2000;
 const MAX_PROXY_BYTES = 100 * 1024 * 1024;
 const ROOT = process.cwd();
 const DATA_DIR = process.env.DATA_DIR
@@ -61,6 +66,7 @@ const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
   : path.join(DATA_DIR, "db.json");
 const ACTIVITY_FILE = path.join(DATA_DIR, "activity.json");
+const CATEGORIES_FILE = path.join(DATA_DIR, "categories.json");
 const SESSION_FILE = path.join(DATA_DIR, "session.json");
 
 // Server config (API keys + admin password) lives in db.json — generated on
@@ -70,6 +76,7 @@ const db = new Database(DB_FILE);
 const adminSessions = new AdminSessions();
 const activity = new ActivityLog(ACTIVITY_FILE);
 const cloudflared = new CloudflaredManager(DATA_DIR);
+const categoryStore = new CategoryStore(CATEGORIES_FILE);
 
 // Live connections — each entry is one connected client.
 type LiveConnection = {
@@ -557,7 +564,7 @@ async function loadLocalState() {
     const rawMessages = await readFile(MESSAGES_CACHE_FILE, "utf8");
     const cachedMessages = JSON.parse(rawMessages) as Record<string, ChatMessage[]>;
     for (const [threadId, list] of Object.entries(cachedMessages)) {
-      messages.set(threadId, list.slice(-300));
+      messages.set(threadId, list.slice(-MAX_THREAD_MESSAGES));
     }
   } catch {
     // No local message cache yet.
@@ -770,7 +777,7 @@ function upsertMessage(message: ChatMessage) {
   if (isNew) {
     list.push(message);
     list.sort((a, b) => a.timestamp - b.timestamp);
-    messages.set(message.threadId, list.slice(-300));
+    messages.set(message.threadId, list.slice(-MAX_THREAD_MESSAGES));
   }
 
   const existing = conversations.get(message.threadId);
@@ -1432,6 +1439,29 @@ app.get("/api/conversations", (_req, res) => {
   res.json(sortedConversations());
 });
 
+// Categories (Slack-style channels) are stored server-side keyed by the
+// logged-in Zalo account, so any machine that logs into the same account gets
+// the same grouping back automatically.
+app.get("/api/categories", (_req, res) => {
+  if (!selfId) {
+    res.json({ selfId: "", categories: [] });
+    return;
+  }
+  res.json({ selfId, categories: categoryStore.get(selfId) });
+});
+
+app.put("/api/categories", (req, res) => {
+  if (!selfId) {
+    res.status(409).json({ error: "Zalo chưa đăng nhập — chưa biết tài khoản để lưu phân loại" });
+    return;
+  }
+  const incoming = Array.isArray(req.body?.categories) ? req.body.categories : [];
+  const saved = categoryStore.set(selfId, incoming);
+  // Broadcast so other clients on the same account update live.
+  io.emit("categories", { selfId, categories: saved });
+  res.json({ selfId, categories: saved });
+});
+
 app.post("/api/conversations/:type/:threadId/action", async (req, res) => {
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   const { type, threadId } = req.params as { type: ThreadKind; threadId: string };
@@ -1509,7 +1539,9 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
   }
   if (type === "group" && (forceRefresh || !messages.has(threadId))) {
     try {
-      const history = await zaloApi.getGroupChatHistory(threadId, 30);
+      // upsertMessage dedupes by id, so re-pulling on refresh merges new
+      // history into the cache rather than dropping what we already have.
+      const history = await zaloApi.getGroupChatHistory(threadId, 100);
       for (const item of history.groupMsgs ?? []) upsertMessage(normalizeIncoming(item));
     } catch (error) {
       res.setHeader("X-Zalo-Warning", errorMessage(error));
@@ -1524,6 +1556,10 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
     schedulePersist();
     if (hadUnread) io.emit("conversations", sortedConversations());
   }
+  // zca-js can fetch full history only for groups. For 1-1 chats the cache is
+  // realtime-only, so tell the client to show a "from when server started"
+  // hint when the cache is shallow.
+  res.setHeader("X-Szalo-History", type === "group" ? "full" : "realtime-only");
   res.json(threadMessages);
 });
 
