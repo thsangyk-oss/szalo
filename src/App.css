@@ -1636,7 +1636,7 @@ span.fileAttachment {
 
 .composeRow {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: end;
   gap: 10px;
 }
@@ -2006,7 +2006,7 @@ span.fileAttachment {
   }
 
   .composeRow {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto auto 1fr auto;
   }
 }
 
