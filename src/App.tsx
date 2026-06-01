@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
+import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
@@ -13,6 +13,7 @@ import MentionPicker, { type GroupMember } from './MentionPicker'
 import GroupMembersModal from './GroupMembersModal'
 import StickerPicker from './StickerPicker'
 import RemindersPanel from './RemindersPanel'
+import AutoReplyPanel from './AutoReplyPanel'
 import { parseStyles, applyFormatting } from './formatting'
 import './App.css'
 
@@ -353,6 +354,7 @@ function App() {
   const [showAllMembers, setShowAllMembers] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
   const [showReminders, setShowReminders] = useState(false)
+  const [showAutoReply, setShowAutoReply] = useState(false)
   // @mention picker state for group composer
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
   // Collected mentions {pos, uid, len} for the current draft, sent with the message
@@ -1206,6 +1208,9 @@ function App() {
         <button className="railButton" onClick={() => setShowFindUser(true)} title="Tìm người dùng Zalo">
           <Plus size={20} />
         </button>
+        <button className="railButton" onClick={() => setShowAutoReply(true)} title="Auto-reply (CRM)">
+          <Power size={20} />
+        </button>
         <button className="railButton" onClick={() => setShowSettings(true)} title="Cài đặt server">
           <SettingsIcon size={20} />
         </button>
@@ -1857,6 +1862,9 @@ function App() {
           threadType={selected.type}
           onClose={() => setShowReminders(false)}
         />
+      )}
+      {showAutoReply && (
+        <AutoReplyPanel onClose={() => setShowAutoReply(false)} />
       )}
       {showChannelPicker && selectedCategory && (() => {
         const currentCategory = categories.find((c) => c.id === selectedCategory)
