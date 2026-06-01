@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Tag, X, Users } from 'lucide-react'
+import { Activity, Bell, BellOff, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
@@ -11,6 +11,7 @@ import QuickReplyPicker from './QuickReplyPicker'
 import FindUser from './FindUser'
 import MentionPicker, { type GroupMember } from './MentionPicker'
 import GroupMembersModal from './GroupMembersModal'
+import StickerPicker from './StickerPicker'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -348,6 +349,7 @@ function App() {
   const [showFindUser, setShowFindUser] = useState(false)
   const [showQuickReply, setShowQuickReply] = useState(false)
   const [showAllMembers, setShowAllMembers] = useState(false)
+  const [showStickers, setShowStickers] = useState(false)
   // @mention picker state for group composer
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
   // Collected mentions {pos, uid, len} for the current draft, sent with the message
@@ -1742,6 +1744,14 @@ function App() {
                   onClose={() => setMentionQuery(null)}
                 />
               )}
+              {showStickers && selected && (
+                <StickerPicker
+                  threadId={selected.id}
+                  threadType={selected.type}
+                  onSent={() => setShowStickers(false)}
+                  onClose={() => setShowStickers(false)}
+                />
+              )}
               <div className="dropHint">Kéo file vào đây hoặc paste ảnh/file từ clipboard. Tối đa {MAX_FILE_COUNT} file, {formatBytes(MAX_FILE_BYTES)}/file.</div>
               {files.length > 0 && <div className="fileQueue">{files.map((file, index) => (
                 <span key={`${file.name}-${index}`} title={`${file.name} - ${formatBytes(file.size)}`}>
@@ -1756,6 +1766,7 @@ function App() {
               }}>
                 <input ref={fileInput} type="file" multiple hidden onChange={(event) => addQueuedFiles(event.target.files ?? [], 'picker')} />
                 <button type="button" className="attachButton" onClick={() => fileInput.current?.click()} title="Đính kèm file"><Paperclip size={18} /></button>
+                <button type="button" className="attachButton" onClick={() => setShowStickers(!showStickers)} title="Sticker"><Smile size={18} /></button>
                 <textarea ref={composerRef} value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
