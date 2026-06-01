@@ -2337,3 +2337,83 @@ span.fileAttachment {
 }
 .fuActions button:hover { border-color: var(--accent); }
 .fuActions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== MENTION PICKER (@-autocomplete in group composer) ===== */
+.mentionPicker {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+  max-height: 280px;
+  display: flex;
+  flex-direction: column;
+  z-index: 16;
+}
+.mpHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.mpHeader strong { font-weight: 500; flex-shrink: 0; }
+.mpHeader small { color: var(--text-muted); margin-left: auto; }
+.mpHeader button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+.mpList {
+  overflow-y: auto;
+  padding: 4px;
+}
+.mpItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.mpItem:hover { background: var(--bg-primary); }
+.mpAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 0.75rem;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mpAvatar img { width: 100%; height: 100%; object-fit: cover; }
+.mpName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpAdmin {
+  background: rgba(124, 92, 255, 0.15);
+  color: var(--accent);
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.mpEmpty { padding: 14px; text-align: center; color: var(--text-muted); font-size: 0.82rem; }

@@ -9,6 +9,7 @@ import MessageActions from './MessageActions'
 import GlobalSearch from './GlobalSearch'
 import QuickReplyPicker from './QuickReplyPicker'
 import FindUser from './FindUser'
+import MentionPicker, { type GroupMember } from './MentionPicker'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -344,6 +345,10 @@ function App() {
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [showFindUser, setShowFindUser] = useState(false)
   const [showQuickReply, setShowQuickReply] = useState(false)
+  // @mention picker state for group composer
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
+  // Collected mentions {pos, uid, len} for the current draft, sent with the message
+  const [pendingMentions, setPendingMentions] = useState<Array<{ pos: number; uid: string; len: number }>>([])
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
@@ -734,6 +739,10 @@ function App() {
     }
     setShowAttachments(false)
     setMessageFilter('')
+    setReplyTo(null)
+    setPendingMentions([])
+    setMentionQuery(null)
+    setShowQuickReply(false)
     setOpening(true)
     // Force a server-side refresh the first time a thread is opened this session
     // so we pull the latest history from Zalo, not just whatever's cached.
@@ -793,6 +802,23 @@ function App() {
     } else {
       setShowQuickReply(false)
     }
+    // @mention picker: only in groups. Detect the most recent "@" before the
+    // cursor position and the partial name typed after it.
+    if (selected?.type === 'group') {
+      const cursor = composerRef.current?.selectionStart ?? value.length
+      const upToCursor = value.slice(0, cursor)
+      // Match "@" followed by zero or more non-space chars at the end of the slice.
+      // Require the "@" to be at the start or preceded by whitespace so emails like
+      // "user@example.com" don't trigger the picker.
+      const match = upToCursor.match(/(?:^|\s)@([^\s@]*)$/)
+      if (match) {
+        setMentionQuery(match[1])
+      } else {
+        setMentionQuery(null)
+      }
+    } else {
+      setMentionQuery(null)
+    }
     if (!selected || Date.now() - lastTypingRef.current < 2500) return
     lastTypingRef.current = Date.now()
     apiJson('/api/events/typing', {
@@ -800,6 +826,27 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ threadId: selected.id, type: selected.type }),
     }).catch(() => undefined)
+  }
+
+  function insertMention(member: GroupMember) {
+    const textarea = composerRef.current
+    if (!textarea) return
+    const cursor = textarea.selectionStart ?? text.length
+    const upToCursor = text.slice(0, cursor)
+    const after = text.slice(cursor)
+    // Replace the trailing "@<query>" with "@<displayName> "
+    const replaced = upToCursor.replace(/@([^\s@]*)$/, `@${member.displayName} `)
+    const next = replaced + after
+    const mentionStart = replaced.length - member.displayName.length - 2  // "@" + name + " "
+    setText(next)
+    setMentionQuery(null)
+    setPendingMentions((current) => [...current, { pos: mentionStart, uid: member.id, len: member.displayName.length + 1 }])
+    // Restore focus and place cursor after the inserted mention
+    requestAnimationFrame(() => {
+      textarea.focus()
+      const newCursor = replaced.length
+      textarea.setSelectionRange(newCursor, newCursor)
+    })
   }
 
   function addQueuedFiles(input: File[] | FileList, source: string) {
@@ -897,6 +944,14 @@ function App() {
         ttl: 0,
       }))
     }
+    // Mentions: keep only those whose recorded position still matches the
+    // current text (i.e. the user didn't delete the @name segment afterward).
+    const validMentions = pendingMentions.filter((m) =>
+      draftText.slice(m.pos, m.pos + m.len + 1).startsWith('@')
+    )
+    if (validMentions.length > 0) {
+      form.append('mentions', JSON.stringify(validMentions))
+    }
     files.forEach((file) => form.append('files', file))
     try {
       setNotice('Đang gửi tin...')
@@ -906,6 +961,7 @@ function App() {
       setText('')
       setFiles([])
       setReplyTo(null)
+      setPendingMentions([])
       if (fileInput.current) fileInput.current.value = ''
       setNotice('Đã gửi')
       reportClientEvent('send-success', { threadId: selected.id, hasMessage: Boolean(response.message) })
@@ -1528,24 +1584,31 @@ function App() {
                 </header>
                 {attachmentItems.length > 0 ? (
                   <div className="attachmentGrid">
-                    {attachmentItems.map((item) => (
-                      <a
-                        key={`${item.message.id}-${item.index}-${item.attachment.href ?? item.attachment.title}`}
-                        href={item.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={item.isImage ? 'attachmentTile imageTile' : 'attachmentTile'}
-                      >
-                        <span className="attachmentPreview">
-                          {item.preview ? <img src={item.preview} alt="" /> : <FileUp size={20} />}
-                        </span>
-                        <span>
-                          <strong>{item.attachment.title || item.attachment.href || 'Attachment'}</strong>
-                          <small>{item.message.isSelf ? 'Bạn' : item.message.senderName || item.message.threadId} - {new Date(item.message.timestamp).toLocaleDateString('vi-VN')}</small>
-                          {item.attachment.size && <small>{item.attachment.size} bytes</small>}
-                        </span>
-                      </a>
-                    ))}
+                    {attachmentItems.map((item) => {
+                      // Use the original Zalo URL when opening externally so
+                      // the browser fetches directly from Zalo's CDN.
+                      const externalUrl = item.attachment.href && item.attachment.href.startsWith('http')
+                        ? item.attachment.href
+                        : item.url
+                      return (
+                        <a
+                          key={`${item.message.id}-${item.index}-${item.attachment.href ?? item.attachment.title}`}
+                          href={externalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={item.isImage ? 'attachmentTile imageTile' : 'attachmentTile'}
+                        >
+                          <span className="attachmentPreview">
+                            {item.preview ? <img src={item.preview} alt="" /> : <FileUp size={20} />}
+                          </span>
+                          <span>
+                            <strong>{item.attachment.title || item.attachment.href || 'Attachment'}</strong>
+                            <small>{item.message.isSelf ? 'Bạn' : item.message.senderName || item.message.threadId} - {new Date(item.message.timestamp).toLocaleDateString('vi-VN')}</small>
+                            {item.attachment.size && <small>{item.attachment.size} bytes</small>}
+                          </span>
+                        </a>
+                      )
+                    })}
                   </div>
                 ) : (
                   <span className="emptyAttachment">Chưa có tệp nào trong tin đã tải của hội thoại này</span>
@@ -1581,6 +1644,10 @@ function App() {
                     const url = attachmentUrl(attachment.href, attachment.title)
                     const preview = attachment.thumb ? attachmentUrl(attachment.thumb, attachment.title) : (isImageAttachment(attachment) ? url : undefined)
                     const isImage = isImageAttachment(attachment)
+                    // Original Zalo URL — used when opening externally so the
+                    // browser fetches the file directly from Zalo's CDN
+                    // instead of going through our localhost proxy URL.
+                    const externalUrl = attachment.href && attachment.href.startsWith('http') ? attachment.href : url
                     if (isImage && preview) {
                       return (
                         <img key={`${attachment.href}-${index}`} className="msgImage" src={preview} alt={attachment.title || ''} onContextMenu={(e) => {
@@ -1589,12 +1656,12 @@ function App() {
                           if (original) navigator.clipboard.writeText(original).then(() => setNotice('Đã copy link ảnh')).catch(() => setNotice('Không copy được link'))
                         }} onClick={(e) => {
                           e.preventDefault()
-                          if (url) window.open(url, '_blank', 'noopener,noreferrer')
+                          if (externalUrl) window.open(externalUrl, '_blank', 'noopener,noreferrer')
                         }} />
                       )
                     }
-                    return url ? (
-                      <a key={`${attachment.href}-${index}`} href={url} target="_blank" rel="noreferrer" className="fileAttachment">
+                    return externalUrl ? (
+                      <a key={`${attachment.href}-${index}`} href={externalUrl} target="_blank" rel="noreferrer" className="fileAttachment">
                         <FileUp size={15} /> {attachment.title || 'Tệp đính kèm'} {attachment.size ? `(${attachment.size} bytes)` : ''}
                       </a>
                     ) : (
@@ -1643,6 +1710,14 @@ function App() {
                   filter={text}
                   onSelect={(reply) => { setText(reply); setShowQuickReply(false) }}
                   onClose={() => setShowQuickReply(false)}
+                />
+              )}
+              {mentionQuery !== null && selected?.type === 'group' && (
+                <MentionPicker
+                  groupId={selected.id}
+                  query={mentionQuery}
+                  onSelect={insertMention}
+                  onClose={() => setMentionQuery(null)}
                 />
               )}
               <div className="dropHint">Kéo file vào đây hoặc paste ảnh/file từ clipboard. Tối đa {MAX_FILE_COUNT} file, {formatBytes(MAX_FILE_BYTES)}/file.</div>
