@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, CreditCard, FileUp, Info, LogOut, MessageCircle, Mic, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
+import type { ClipboardEvent, DragEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, CreditCard, FileUp, Info, LogOut, MessageCircle, Mic, MoreHorizontal, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
@@ -917,6 +917,10 @@ function App() {
     if (fileInput.current) fileInput.current.value = ''
   }
 
+  function closeDisclosure(event: ReactMouseEvent<HTMLElement>) {
+    event.currentTarget.closest('details')?.removeAttribute('open')
+  }
+
   /**
    * Wrap the textarea selection (or insert empty markers) with a Markdown
    * formatting marker. Used by the format toolbar above the composer.
@@ -1513,38 +1517,12 @@ function App() {
                   <input value={messageFilter} onChange={(event) => setMessageFilter(event.target.value)} placeholder="Tìm tin nhắn" />
                 </label>
                 <div className="iconGroup">
-                  {electron && (
-                    <button className="iconButton" onClick={() => electron.openBubble({ threadId: selected.id, type: selected.type, name: selected.name, avatar: selected.avatar })} title="Bong bóng chat">
-                      <CircleDot size={16} />
-                    </button>
-                  )}
-                  {categories.length > 0 && (
-                    <button className="iconButton" onClick={() => {
-                      setShowCategoryManager(true)
-                      setShowNotifications(false)
-                      setShowDiagnostics(false)
-                    }} title="Thêm vào kênh">
-                      <Tag size={16} />
-                    </button>
-                  )}
                   <button className={showAttachments ? 'iconButton active' : 'iconButton'} onClick={() => {
                     const next = !showAttachments
                     setShowAttachments(next)
                     reportClientEvent('attachments-panel', { open: next, count: attachmentItems.length })
                   }} title="Tệp trong chat">
                     <FileUp size={16} />
-                  </button>
-                  <button className={selected.pinned ? 'iconButton active' : 'iconButton'} onClick={() => conversationAction(selected.pinned ? 'unpin' : 'pin')} title={selected.pinned ? 'Bỏ ghim' : 'Ghim'}>
-                    {selected.pinned ? <PinOff size={16} /> : <Pin size={16} />}
-                  </button>
-                  <button className={selected.muted ? 'iconButton active' : 'iconButton'} onClick={() => conversationAction(selected.muted ? 'unmute' : 'mute')} title={selected.muted ? 'Bật thông báo' : 'Tắt thông báo'}>
-                    {selected.muted ? <BellOff size={16} /> : <Bell size={16} />}
-                  </button>
-                  <button className="iconButton" onClick={() => setShowReminders(true)} title="Reminder / Follow-up">
-                    <Calendar size={16} />
-                  </button>
-                  <button className="iconButton" onClick={() => conversationAction(selected.unread > 0 ? 'mark_read' : 'mark_unread')} title={selected.unread > 0 ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}>
-                    <CheckCheck size={16} />
                   </button>
                   <button className={showThreadInfo ? 'iconButton active' : 'iconButton'} onClick={() => {
                     const next = !showThreadInfo
@@ -1557,6 +1535,61 @@ function App() {
                   <button className="iconButton" onClick={() => openConversation(selected, true)} disabled={opening} title="Tải lại">
                     <RefreshCw size={16} />
                   </button>
+                  <details className="actionMenu">
+                    <summary className="iconButton actionMenuTrigger" title="Thao tác khác" aria-label="Thao tác khác">
+                      <MoreHorizontal size={16} />
+                    </summary>
+                    <div className="actionMenuPanel">
+                      {electron && (
+                        <button type="button" className="actionMenuItem" onClick={(event) => {
+                          closeDisclosure(event)
+                          electron.openBubble({ threadId: selected.id, type: selected.type, name: selected.name, avatar: selected.avatar })
+                        }}>
+                          <CircleDot size={15} />
+                          <span>Bong bóng chat</span>
+                        </button>
+                      )}
+                      {categories.length > 0 && (
+                        <button type="button" className="actionMenuItem" onClick={(event) => {
+                          closeDisclosure(event)
+                          setShowCategoryManager(true)
+                          setShowNotifications(false)
+                          setShowDiagnostics(false)
+                        }}>
+                          <Tag size={15} />
+                          <span>Thêm vào kênh</span>
+                        </button>
+                      )}
+                      <button type="button" className={selected.pinned ? 'actionMenuItem active' : 'actionMenuItem'} onClick={(event) => {
+                        closeDisclosure(event)
+                        conversationAction(selected.pinned ? 'unpin' : 'pin')
+                      }}>
+                        {selected.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+                        <span>{selected.pinned ? 'Bỏ ghim' : 'Ghim hội thoại'}</span>
+                      </button>
+                      <button type="button" className={selected.muted ? 'actionMenuItem active' : 'actionMenuItem'} onClick={(event) => {
+                        closeDisclosure(event)
+                        conversationAction(selected.muted ? 'unmute' : 'mute')
+                      }}>
+                        {selected.muted ? <BellOff size={15} /> : <Bell size={15} />}
+                        <span>{selected.muted ? 'Bật thông báo' : 'Tắt thông báo'}</span>
+                      </button>
+                      <button type="button" className="actionMenuItem" onClick={(event) => {
+                        closeDisclosure(event)
+                        setShowReminders(true)
+                      }}>
+                        <Calendar size={15} />
+                        <span>Reminder</span>
+                      </button>
+                      <button type="button" className="actionMenuItem" onClick={(event) => {
+                        closeDisclosure(event)
+                        conversationAction(selected.unread > 0 ? 'mark_read' : 'mark_unread')
+                      }}>
+                        <CheckCheck size={15} />
+                        <span>{selected.unread > 0 ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}</span>
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
             </header>
@@ -1798,13 +1831,6 @@ function App() {
                   <button type="button" onClick={() => removeQueuedFile(file.name, index)} title="Remove file"><X size={13} /></button>
                 </span>
               ))}</div>}
-              <div className="formatToolbar">
-                <button type="button" className="formatBtn" onClick={() => wrapFormat('**')} title="Đậm (Ctrl+B)"><strong>B</strong></button>
-                <button type="button" className="formatBtn" onClick={() => wrapFormat('*')} title="Nghiêng (Ctrl+I)"><em>I</em></button>
-                <button type="button" className="formatBtn" onClick={() => wrapFormat('__')} title="Gạch chân (Ctrl+U)"><span style={{ textDecoration: 'underline' }}>U</span></button>
-                <button type="button" className="formatBtn" onClick={() => wrapFormat('~~')} title="Gạch ngang"><s>S</s></button>
-                <small className="formatHint">**đậm** *nghiêng* __gạch chân__ ~~gạch ngang~~</small>
-              </div>
               {recordingVoice && selected && (
                 <VoiceRecorder
                   threadId={selected.id}
@@ -1818,30 +1844,74 @@ function App() {
                 sendMessage()
               }}>
                 <input ref={fileInput} type="file" multiple hidden onChange={(event) => addQueuedFiles(event.target.files ?? [], 'picker')} />
-                <button type="button" className="attachButton" onClick={() => fileInput.current?.click()} title="Đính kèm file"><Paperclip size={18} /></button>
-                <button type="button" className="attachButton" onClick={() => setShowStickers(!showStickers)} title="Sticker"><Smile size={18} /></button>
-                <button type="button" className="attachButton" onClick={() => setRecordingVoice(true)} title="Ghi âm"><Mic size={18} /></button>
-                <button type="button" className="attachButton" onClick={() => setShowBankCard(true)} title="Gửi STK ngân hàng"><CreditCard size={18} /></button>
-                <textarea ref={composerRef} value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    sendMessage()
-                    return
-                  }
-                  // Ctrl+B/I/U formatting shortcuts
-                  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
-                    if (event.key === 'b' || event.key === 'B') {
+                <div className="composeActions" aria-label="Công cụ soạn tin">
+                  <details className="composeMenu">
+                    <summary className="attachButton composeMenuTrigger" title="Công cụ gửi" aria-label="Công cụ gửi">
+                      <Paperclip size={18} />
+                    </summary>
+                    <div className="composeMenuPanel">
+                      <button type="button" className="composeMenuItem" onClick={(event) => {
+                        closeDisclosure(event)
+                        fileInput.current?.click()
+                      }}>
+                        <Paperclip size={16} />
+                        <span>Đính kèm file</span>
+                      </button>
+                      <button type="button" className={showStickers ? 'composeMenuItem active' : 'composeMenuItem'} onClick={(event) => {
+                        closeDisclosure(event)
+                        setShowStickers(!showStickers)
+                      }}>
+                        <Smile size={16} />
+                        <span>Sticker</span>
+                      </button>
+                      <button type="button" className={recordingVoice ? 'composeMenuItem active' : 'composeMenuItem'} onClick={(event) => {
+                        closeDisclosure(event)
+                        setRecordingVoice(true)
+                      }}>
+                        <Mic size={16} />
+                        <span>Ghi âm</span>
+                      </button>
+                      <button type="button" className="composeMenuItem" onClick={(event) => {
+                        closeDisclosure(event)
+                        setShowBankCard(true)
+                      }}>
+                        <CreditCard size={16} />
+                        <span>Gửi STK ngân hàng</span>
+                      </button>
+                    </div>
+                  </details>
+                  <details className="composeMenu formatMenu">
+                    <summary className="attachButton formatMenuTrigger" title="Định dạng" aria-label="Định dạng">Aa</summary>
+                    <div className="composeMenuPanel formatMenuPanel">
+                      <button type="button" className="composeMenuItem" onClick={(event) => { closeDisclosure(event); wrapFormat('**') }} title="Đậm (Ctrl+B)"><strong>B</strong><span>Đậm</span></button>
+                      <button type="button" className="composeMenuItem" onClick={(event) => { closeDisclosure(event); wrapFormat('*') }} title="Nghiêng (Ctrl+I)"><em>I</em><span>Nghiêng</span></button>
+                      <button type="button" className="composeMenuItem" onClick={(event) => { closeDisclosure(event); wrapFormat('__') }} title="Gạch chân (Ctrl+U)"><span style={{ textDecoration: 'underline' }}>U</span><span>Gạch chân</span></button>
+                      <button type="button" className="composeMenuItem" onClick={(event) => { closeDisclosure(event); wrapFormat('~~') }} title="Gạch ngang"><s>S</s><span>Gạch ngang</span></button>
+                    </div>
+                  </details>
+                </div>
+                <div className="composeInput">
+                  <textarea ref={composerRef} value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault()
-                      wrapFormat('**')
-                    } else if (event.key === 'i' || event.key === 'I') {
-                      event.preventDefault()
-                      wrapFormat('*')
-                    } else if (event.key === 'u' || event.key === 'U') {
-                      event.preventDefault()
-                      wrapFormat('__')
+                      sendMessage()
+                      return
                     }
-                  }
-                }} />
+                    // Ctrl+B/I/U formatting shortcuts
+                    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
+                      if (event.key === 'b' || event.key === 'B') {
+                        event.preventDefault()
+                        wrapFormat('**')
+                      } else if (event.key === 'i' || event.key === 'I') {
+                        event.preventDefault()
+                        wrapFormat('*')
+                      } else if (event.key === 'u' || event.key === 'U') {
+                        event.preventDefault()
+                        wrapFormat('__')
+                      }
+                    }
+                  }} />
+                </div>
                 <button className="send" type="submit" disabled={sending || status.state !== 'online'} title={sending ? 'Đang gửi' : 'Gửi tin'}><Send size={18} /><span>Gửi</span></button>
               </form>
             </footer>

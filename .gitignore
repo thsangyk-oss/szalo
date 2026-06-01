@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-server
 build
 dist-ssr
 dist-electron
@@ -27,6 +28,9 @@ electron/admin.html
 electron/icon.png
 electron/tray-icon.png
 electron/icon.ico.png
+electron/server-icon.png
+electron/server-tray-icon.png
+electron/server-icon.ico.png
 
 # Editor directories and files
 .vscode/*

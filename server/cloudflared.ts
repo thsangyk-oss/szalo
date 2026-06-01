@@ -16,6 +16,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 
 const RELEASE_BASE = "https://github.com/cloudflare/cloudflared/releases/latest/download";
+const DOWNLOAD_TIMEOUT_MS = 180_000;
 
 export type CloudflaredStatus = {
   installed: boolean;
@@ -63,6 +64,16 @@ function probeBinary(binary: string): { ok: boolean; version?: string } {
     return { ok: false };
   } catch {
     return { ok: false };
+  }
+}
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -146,19 +157,20 @@ export class CloudflaredManager extends EventEmitter {
     this.lastError = "";
     this.emit("status", this.status());
 
+    let tmpPath = "";
     try {
       const binDir = path.join(this.dataDir, "bin");
       mkdirSync(binDir, { recursive: true });
 
       const url = `${RELEASE_BASE}/${asset.name}`;
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url);
       if (!response.ok || !response.body) {
         throw new Error(`HTTP ${response.status} khi tải ${url}`);
       }
       this.totalBytes = Number(response.headers.get("content-length") ?? 0);
 
       const localPath = localBinaryPath(this.dataDir);
-      const tmpPath = asset.isTgz
+      tmpPath = asset.isTgz
         ? path.join(binDir, `download-${Date.now()}.tgz`)
         : `${localPath}.partial`;
 
@@ -221,6 +233,7 @@ export class CloudflaredManager extends EventEmitter {
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       this.downloading = false;
+      if (tmpPath && existsSync(tmpPath)) await rm(tmpPath, { force: true });
       this.emit("status", this.status());
       return this.status();
     }

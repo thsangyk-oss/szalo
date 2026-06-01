@@ -20,7 +20,9 @@
     "start:server": "npm --prefix server start",
     "preview": "vite preview",
     "pack": "npm run build && npm run build:icons && electron-builder --dir",
-    "dist": "npm run build && npm run build:icons && electron-builder"
+    "dist": "npm run build && npm run build:icons && electron-builder",
+    "pack:server": "npm run build:server && npm run build:icons && electron-builder --config electron-builder.server.json --dir",
+    "dist:server": "npm run build:server && npm run build:icons && electron-builder --config electron-builder.server.json"
   },
   "dependencies": {
     "react": "^19.2.6",
@@ -74,6 +76,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Szalo",
       "installerIcon": "electron/icon.png",
       "uninstallerIcon": "electron/icon.png"
     }

@@ -10,7 +10,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import multer from "multer";
 import { Server } from "socket.io";
-import { TunnelManager } from "./tunnel";
+import { TunnelManager, validateNamedTunnelInput } from "./tunnel";
 import { Database } from "./db";
 import { AdminSessions } from "./admin";
 import { ActivityLog, type ActivityEvent } from "./activity";
@@ -102,6 +102,10 @@ const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 const QR_FILE = path.join(DATA_DIR, "qr.png");
 const SERVER_STARTED_AT = new Date().toISOString();
 const ALLOWED_ATTACHMENT_HOSTS = ["zdn.vn", "dlmd.me", "zalo.me", "zaloapp.com", "zadn.vn"];
+
+function emitEmbeddedServerEvent(eventName: "szalo-server-ready" | "szalo-server-error", payload: unknown) {
+  (process as unknown as { emit: (name: string, payload: unknown) => boolean }).emit(eventName, payload);
+}
 
 type ThreadKind = "user" | "group";
 type DeliveryStatus = "sent" | "delivered" | "seen";
@@ -1155,12 +1159,17 @@ app.post("/api/admin/tunnel/named", async (req, res) => {
   const tunnelName = typeof req.body?.tunnelName === "string" ? req.body.tunnelName.trim() : "";
   const domain = typeof req.body?.domain === "string" ? req.body.domain.trim() : "";
   const subdomain = typeof req.body?.subdomain === "string" ? req.body.subdomain.trim() : "";
-  if (!tunnelName || !domain || !subdomain) {
-    res.status(400).json({ error: "Cần đủ tunnel name, domain, subdomain" });
+  const validated = validateNamedTunnelInput({ tunnelName, domain, subdomain });
+  if (!validated.ok) {
+    res.status(400).json({ error: validated.error });
     return;
   }
-  db.setCloudflareConfig({ tunnelName, domain, subdomain });
-  const status = await tunnel.startNamed(PORT, tunnelName, subdomain, domain);
+  db.setCloudflareConfig({
+    tunnelName: validated.value.tunnelName,
+    domain: validated.value.domain,
+    subdomain: validated.value.subdomain,
+  });
+  const status = await tunnel.startNamed(PORT, validated.value.tunnelName, validated.value.subdomain, validated.value.domain);
   res.json(status);
 });
 app.post("/api/admin/tunnel/stop", async (_req, res) => {
@@ -2276,15 +2285,32 @@ async function bootstrap() {
   }
   await restoreSession();
 
-  server.listen(PORT, () => {
-    console.log(`Szalo server listening on http://localhost:${PORT}`);
-    console.log(`Admin UI: http://localhost:${PORT}/admin`);
-    console.log(`Data dir: ${DATA_DIR}`);
-    console.log(`CORS: ${CLIENT_ORIGIN_RAW}`);
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(PORT, () => {
+      server.off("error", onError);
+      console.log(`Szalo server listening on http://localhost:${PORT}`);
+      console.log(`Admin UI: http://localhost:${PORT}/admin`);
+      console.log(`Data dir: ${DATA_DIR}`);
+      console.log(`CORS: ${CLIENT_ORIGIN_RAW}`);
+      if (process.env.SZALO_EMBEDDED_SERVER === "1") {
+        emitEmbeddedServerEvent("szalo-server-ready", {
+          port: PORT,
+          adminUrl: `http://localhost:${PORT}/admin`,
+          dataDir: DATA_DIR,
+        });
+      }
+      resolve();
+    });
   });
 }
 
 bootstrap().catch((error) => {
   console.error('Bootstrap failed:', error);
+  if (process.env.SZALO_EMBEDDED_SERVER === "1") {
+    emitEmbeddedServerEvent("szalo-server-error", error);
+    return;
+  }
   process.exit(1);
 });

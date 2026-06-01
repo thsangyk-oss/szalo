@@ -143,6 +143,381 @@
     .activityRow .ts { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; min-width: 70px; }
     .activityRow .actorName { font-weight: 500; }
     .activityRow .target { color: var(--muted); font-family: ui-monospace, monospace; }
+
+    /* === UI refresh === */
+    :root {
+      --bg: #10110f;
+      --panel: #171815;
+      --panel-2: #20211d;
+      --panel-3: #282a25;
+      --border: #34372f;
+      --border-soft: #252820;
+      --text: #f0f2ea;
+      --muted: #8f988a;
+      --accent: #14b8a6;
+      --accent-2: #2dd4bf;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #f05252;
+      --shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+      font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .layout {
+      grid-template-columns: 248px minmax(0, 1fr);
+      background: var(--bg);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 16px 12px;
+      background: #0c0d0b;
+      border-right-color: var(--border-soft);
+    }
+
+    .sidebar h1 {
+      padding: 8px 10px 18px;
+      color: var(--text);
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+
+    .sideBtn {
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: var(--muted);
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .sideBtn:hover {
+      background: var(--panel-2);
+      border-color: var(--border-soft);
+      color: var(--text);
+    }
+
+    .sideBtn.active {
+      background: rgba(20, 184, 166, 0.14);
+      border-color: rgba(20, 184, 166, 0.35);
+      color: var(--accent-2);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .sideBtn.danger {
+      color: #fca5a5;
+    }
+
+    .content {
+      width: min(1180px, calc(100vw - 248px));
+      max-width: none;
+      padding: 28px 32px 64px;
+    }
+
+    section[data-pane] > h1 {
+      font-size: 1.35rem;
+      letter-spacing: 0;
+    }
+
+    p.lead {
+      max-width: 780px;
+      color: var(--muted);
+    }
+
+    .card,
+    .loginCard {
+      background: var(--panel);
+      border-color: var(--border-soft);
+      border-radius: 8px;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .card:hover {
+      border-color: var(--border);
+    }
+
+    .grid2 {
+      grid-template-columns: repeat(2, minmax(280px, 1fr));
+    }
+
+    label {
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    input,
+    select,
+    textarea {
+      min-height: 38px;
+      background: #11130f;
+      border-color: var(--border-soft);
+      border-radius: 7px;
+      color: var(--text);
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(20, 184, 166, 0.65);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+    }
+
+    button {
+      min-height: 36px;
+      border-color: var(--border);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--text);
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    button:hover {
+      background: var(--panel-3);
+      border-color: #44483e;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #06110f;
+      font-weight: 700;
+    }
+
+    button.primary:hover {
+      background: var(--accent-2);
+    }
+
+    button.danger {
+      background: rgba(240, 82, 82, 0.12);
+      border-color: rgba(240, 82, 82, 0.38);
+      color: #fca5a5;
+    }
+
+    button.ghost {
+      color: var(--muted);
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 4px 9px;
+    }
+
+    .pill.ok {
+      background: rgba(34, 197, 94, 0.1);
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .pill.warn {
+      background: rgba(245, 158, 11, 0.1);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.32);
+    }
+
+    .pill.err {
+      background: rgba(240, 82, 82, 0.1);
+      color: #fca5a5;
+      border-color: rgba(240, 82, 82, 0.32);
+    }
+
+    .pill.muted {
+      background: var(--panel-2);
+      color: var(--muted);
+      border-color: var(--border-soft);
+    }
+
+    .urlBox {
+      align-items: center;
+    }
+
+    .urlBox input {
+      min-width: 0;
+    }
+
+    .banner {
+      border-radius: 8px;
+      background: rgba(245, 158, 11, 0.1);
+      border-color: rgba(245, 158, 11, 0.32);
+    }
+
+    .card {
+      overflow-x: auto;
+    }
+
+    table {
+      min-width: 640px;
+      border-spacing: 0;
+    }
+
+    th,
+    td {
+      border-bottom-color: var(--border-soft);
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .actionsCell {
+      min-width: 148px;
+    }
+
+    .tabs {
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: #11130f;
+    }
+
+    .tabs button {
+      min-height: 34px;
+      border-radius: 6px;
+      border: 0;
+    }
+
+    .tabs button.active {
+      background: var(--panel-3);
+      color: var(--accent-2);
+      border-bottom-color: transparent;
+      box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.28);
+    }
+
+    .modalBackdrop,
+    .login {
+      background: rgba(0, 0, 0, 0.62);
+      backdrop-filter: blur(10px);
+    }
+
+    .toast {
+      background: var(--panel-2);
+      border-color: var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .logs,
+    .activityFeed {
+      border-color: var(--border-soft);
+      background: #11130f;
+    }
+
+    .activityRow {
+      border-bottom-color: var(--border-soft);
+    }
+
+    .buttonLink {
+      min-height: 36px;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .buttonLink:hover {
+      background: var(--panel-3);
+      border-color: #44483e;
+    }
+
+    .tunnelModeNote {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      background: #11130f;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .tunnelModeNote strong {
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+
+    .tunnelModeNote code {
+      background: var(--panel-2);
+    }
+
+    #cfValidation.ok {
+      color: #86efac;
+    }
+
+    #cfValidation.err {
+      color: #fca5a5;
+    }
+
+    @media (max-width: 980px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        display: flex;
+        height: auto;
+        flex-direction: row;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-soft);
+      }
+
+      .sidebar h1,
+      .sideSpacer {
+        display: none;
+      }
+
+      .sideBtn {
+        width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+
+      .content {
+        width: 100%;
+        padding: 20px 16px 48px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .grid2 {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .urlBox,
+      .row {
+        align-items: stretch;
+      }
+    }
   </style>
 </head>
 <body>
@@ -291,10 +666,16 @@
       <!-- ========= Tunnel ========= -->
       <section data-pane="tunnel" class="hidden">
         <h1 style="margin-bottom: 6px;">🌐 Cloudflare Tunnel</h1>
-        <p class="lead">Đẩy server ra public internet qua Cloudflare. Cần cài <code>cloudflared</code> và có trong <code>PATH</code>.</p>
+        <p class="lead">Đẩy server ra public internet qua Cloudflare. Có thể dùng Quick Tunnel để thử nhanh, hoặc Named Tunnel để giữ URL ổn định trên domain riêng.</p>
 
         <div class="card">
           <div class="row" id="tunnelStateRow" style="margin-bottom: 14px;"></div>
+          <div id="tunnelUrlWrap" class="urlBox hidden" style="margin-bottom: 14px;">
+            <input id="tunnelPublicUrl" type="text" readonly />
+            <button data-copy="#tunnelPublicUrl" type="button">Copy</button>
+            <a id="tunnelOpenUrl" class="buttonLink" href="#" target="_blank" rel="noreferrer">Mở</a>
+          </div>
+          <div id="tunnelHint" class="keyHint" style="margin: -6px 0 14px;"></div>
 
           <!-- cloudflared binary status -->
           <div id="cfBinaryBox" style="padding: 12px 14px; background: var(--panel-2); border-radius: 9px; margin-bottom: 14px;">
@@ -316,7 +697,10 @@
           </div>
 
           <div id="paneQuick" class="stack">
-            <p class="keyHint" style="margin-top: 0;">Quick Tunnel sinh subdomain ngẫu nhiên <code>*.trycloudflare.com</code>, miễn phí, không cần tài khoản Cloudflare. URL đổi mỗi lần khởi động.</p>
+            <div class="tunnelModeNote">
+              <strong>Phù hợp để thử nhanh</strong>
+              <span>Không cần tài khoản Cloudflare. URL <code>*.trycloudflare.com</code> đổi mỗi lần chạy, nên không dùng cho client cố định lâu dài.</span>
+            </div>
             <div class="row">
               <button id="quickStart" type="button" class="primary">▶ Khởi tạo Quick Tunnel</button>
               <button id="quickStop" type="button" class="danger">■ Dừng tunnel</button>
@@ -324,7 +708,10 @@
           </div>
 
           <div id="paneNamed" class="stack hidden">
-            <p class="keyHint" style="margin-top: 0;">Named Tunnel cho phép gắn subdomain trên domain riêng (ví dụ <code>szalo.example.com</code>). Cần authorize cloudflared một lần với Cloudflare account đã add domain.</p>
+            <div class="tunnelModeNote">
+              <strong>Khuyến nghị cho dùng thật</strong>
+              <span>Giữ URL ổn định như <code>zalo.example.com</code>. Cần authorize một lần với Cloudflare account có domain.</span>
+            </div>
 
             <!-- Auth status card -->
             <div id="cfAuthStatus" style="padding: 12px 14px; background: var(--panel-2); border-radius: 9px;">
@@ -367,6 +754,7 @@
               <input id="cfSubdomain" type="text" placeholder="szalo" />
               <small style="color: var(--muted); font-size: 0.75rem;">Public URL sẽ là <code id="cfPreview">subdomain.domain</code></small>
             </div>
+            <div id="cfValidation" class="keyHint"></div>
             <div class="row">
               <button id="namedStart" type="button" class="primary">▶ Khởi tạo Named Tunnel</button>
               <button id="namedStop" type="button" class="danger">■ Dừng tunnel</button>
@@ -577,6 +965,7 @@
       $$("section[data-pane]").forEach((sec) => sec.classList.toggle("hidden", sec.dataset.pane !== tab));
       if (tab === "watch") refreshActivity();
       if (tab === "keys") refreshKeys();
+      if (tab === "tunnel") adminJSON("/api/admin/tunnel/status").then(renderTunnel).catch(() => undefined);
     }
     $$(".sideBtn[data-tab]").forEach((btn) => btn.addEventListener("click", () => setTab(btn.dataset.tab)));
 
@@ -852,18 +1241,85 @@
 
     // ========= Tunnel =========
     let tunnelMode = "quick";
+    let currentTunnelStatus = { state: "stopped", mode: null, publicUrl: "" };
+    let currentCloudflaredStatus = null;
+    let currentAuthStatus = null;
+
+    const DNS_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+    const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+    const TUNNEL_NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,62}$/i;
+
     function setTunnelMode(mode) {
       tunnelMode = mode;
       $("#modeQuick").classList.toggle("active", mode === "quick");
       $("#modeNamed").classList.toggle("active", mode === "named");
       $("#paneQuick").classList.toggle("hidden", mode !== "quick");
       $("#paneNamed").classList.toggle("hidden", mode !== "named");
+      updateTunnelControls();
     }
     $("#modeQuick").addEventListener("click", () => setTunnelMode("quick"));
     $("#modeNamed").addEventListener("click", () => setTunnelMode("named"));
 
+    function validateNamedFields() {
+      const tunnelName = $("#cfTunnelName").value.trim();
+      const domain = $("#cfDomain").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const subdomain = $("#cfSubdomain").value.trim().toLowerCase();
+      if (!tunnelName || !domain || !subdomain) return { ok: false, error: "Nhập đủ tunnel name, domain và subdomain." };
+      if (!TUNNEL_NAME_RE.test(tunnelName)) return { ok: false, error: "Tunnel name chỉ dùng chữ, số, -, _ hoặc dấu chấm." };
+      if (!DNS_LABEL_RE.test(subdomain)) return { ok: false, error: "Subdomain chỉ nhập một nhãn, ví dụ zalo hoặc demo-zalo." };
+      if (!DOMAIN_RE.test(domain)) return { ok: false, error: "Domain chưa đúng định dạng, ví dụ example.com." };
+      return { ok: true, tunnelName, domain, subdomain, fqdn: `${subdomain}.${domain}` };
+    }
+
+    function updateTunnelControls() {
+      const installed = Boolean(currentCloudflaredStatus && currentCloudflaredStatus.installed && !currentCloudflaredStatus.downloading);
+      const downloading = Boolean(currentCloudflaredStatus && currentCloudflaredStatus.downloading);
+      const active = currentTunnelStatus && (currentTunnelStatus.state === "starting" || currentTunnelStatus.state === "running");
+      const starting = currentTunnelStatus && currentTunnelStatus.state === "starting";
+      const namedReady = validateNamedFields();
+      const authorized = Boolean(currentAuthStatus && currentAuthStatus.authorized);
+
+      $("#quickStart").disabled = !installed || active;
+      $("#quickStop").disabled = !active;
+      $("#namedStart").disabled = !installed || active || !authorized || !namedReady.ok;
+      $("#namedStop").disabled = !active;
+      $("#authorizeBtn").disabled = !installed || downloading || active;
+
+      $("#quickStart").textContent = starting && currentTunnelStatus.mode === "quick" ? "Đang khởi tạo..." : "▶ Khởi tạo Quick Tunnel";
+      $("#namedStart").textContent = starting && currentTunnelStatus.mode === "named" ? "Đang khởi tạo..." : "▶ Khởi tạo Named Tunnel";
+      $("#quickStop").textContent = active ? "■ Dừng tunnel" : "Tunnel đang tắt";
+      $("#namedStop").textContent = active ? "■ Dừng tunnel" : "Tunnel đang tắt";
+
+      const validationEl = $("#cfValidation");
+      if (!authorized) {
+        validationEl.textContent = "Cần authorize Cloudflare trước khi chạy Named Tunnel.";
+        validationEl.className = "keyHint err";
+      } else if (!namedReady.ok) {
+        validationEl.textContent = namedReady.error;
+        validationEl.className = "keyHint err";
+      } else {
+        validationEl.textContent = `Sẵn sàng chạy tại https://${namedReady.fqdn}`;
+        validationEl.className = "keyHint ok";
+      }
+
+      const hint = $("#tunnelHint");
+      if (!installed) {
+        hint.textContent = downloading ? "Đang tải cloudflared. Sau khi tải xong có thể chạy Quick Tunnel ngay." : "Bước 1: tải cloudflared hoặc cài cloudflared trong PATH.";
+      } else if (active) {
+        hint.textContent = currentTunnelStatus.state === "running" ? "Tunnel đang chạy. Copy Public URL để cấu hình client ở ngoài mạng LAN." : "Đang chờ Cloudflare cấp kết nối, thường mất vài giây.";
+      } else if (currentTunnelStatus.state === "error") {
+        hint.textContent = "Có lỗi khi chạy tunnel. Xem log bên dưới, sửa nguyên nhân rồi bấm khởi tạo lại.";
+      } else {
+        hint.textContent = tunnelMode === "quick" ? "Bấm Quick Tunnel để lấy URL tạm thời ngay." : "Authorize, nhập domain rồi chạy Named Tunnel để có URL cố định.";
+      }
+    }
+
     function renderTunnel(status) {
+      currentTunnelStatus = status || currentTunnelStatus;
       $("#publicUrl").value = status.publicUrl || "";
+      $("#tunnelPublicUrl").value = status.publicUrl || "";
+      $("#tunnelOpenUrl").href = status.publicUrl || "#";
+      $("#tunnelUrlWrap").classList.toggle("hidden", !status.publicUrl);
       const dashState = $("#dashTunnelState");
       const labels = {
         stopped: ["muted", "Tunnel tắt"],
@@ -889,9 +1345,11 @@
       }
       if (status.cloudflared) renderCloudflared(status.cloudflared);
       if (status.auth) renderAuthStatus(status.auth);
+      updateTunnelControls();
     }
 
     function renderCloudflared(cf) {
+      currentCloudflaredStatus = cf;
       const stateEl = $("#cfBinaryState");
       const installBtn = $("#cfInstallBtn");
       const progWrap = $("#cfProgressWrap");
@@ -909,6 +1367,7 @@
         progText.textContent = cf.totalBytes
           ? `${pct}% — ${mb(cf.downloadedBytes)} / ${mb(cf.totalBytes)}`
           : `Đã tải ${mb(cf.downloadedBytes)}`;
+        updateTunnelControls();
         return;
       }
 
@@ -926,9 +1385,11 @@
           (cf.error ? `<span class="pill warn">${escapeHtml(cf.error)}</span>` : "");
         installBtn.textContent = "⬇ Tải cloudflared";
       }
+      updateTunnelControls();
     }
 
     function renderAuthStatus(auth) {
+      currentAuthStatus = auth;
       const body = $("#cfAuthBody");
       const listEl = $("#cfTunnelList");
       const listBody = $("#cfTunnelListBody");
@@ -960,6 +1421,7 @@
       } else {
         listEl.style.display = "none";
       }
+      updateTunnelControls();
     }
 
     async function refreshAuthStatus() {
@@ -979,6 +1441,7 @@
       const sub = $("#cfSubdomain").value.trim();
       const dom = $("#cfDomain").value.trim();
       $("#cfPreview").textContent = sub && dom ? `${sub}.${dom}` : "subdomain.domain";
+      updateTunnelControls();
     }
     ["#cfTunnelName", "#cfDomain", "#cfSubdomain"].forEach((sel) => {
       const el = $(sel);
@@ -986,28 +1449,40 @@
     });
 
     $("#quickStart").addEventListener("click", async () => {
-      try { renderTunnel({ ...(await adminJSON("/api/admin/tunnel/quick", { method: "POST" })), config: { tunnelName: $("#cfTunnelName").value, domain: $("#cfDomain").value, subdomain: $("#cfSubdomain").value } }); }
+      try {
+        $("#quickStart").disabled = true;
+        renderTunnel({ ...(await adminJSON("/api/admin/tunnel/quick", { method: "POST" })), config: { tunnelName: $("#cfTunnelName").value, domain: $("#cfDomain").value, subdomain: $("#cfSubdomain").value } });
+      }
       catch (error) { toast(error.message); }
+      finally { updateTunnelControls(); }
     });
     $("#quickStop").addEventListener("click", async () => {
-      try { renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" })); }
+      try {
+        $("#quickStop").disabled = true;
+        renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" }));
+      }
       catch (error) { toast(error.message); }
+      finally { updateTunnelControls(); }
     });
     $("#namedStart").addEventListener("click", async () => {
-      const tunnelName = $("#cfTunnelName").value.trim();
-      const domain = $("#cfDomain").value.trim();
-      const subdomain = $("#cfSubdomain").value.trim();
-      if (!tunnelName || !domain || !subdomain) { toast("Cần đủ tunnel name, domain, subdomain"); return; }
+      const ready = validateNamedFields();
+      if (!ready.ok) { toast(ready.error); updateTunnelControls(); return; }
       try {
+        $("#namedStart").disabled = true;
         renderTunnel(await adminJSON("/api/admin/tunnel/named", {
           method: "POST",
-          body: JSON.stringify({ tunnelName, domain, subdomain }),
+          body: JSON.stringify({ tunnelName: ready.tunnelName, domain: ready.domain, subdomain: ready.subdomain }),
         }));
       } catch (error) { toast(error.message); }
+      finally { updateTunnelControls(); }
     });
     $("#namedStop").addEventListener("click", async () => {
-      try { renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" })); }
+      try {
+        $("#namedStop").disabled = true;
+        renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" }));
+      }
       catch (error) { toast(error.message); }
+      finally { updateTunnelControls(); }
     });
     $("#authorizeBtn").addEventListener("click", async () => {
       $("#authorizeBtn").disabled = true;
@@ -1022,10 +1497,13 @@
           window.open(result.url, "_blank", "noopener");
         }
         toast(result.ok ? "Authorize thành công" : (result.error || "Authorize thất bại"));
+        await refreshAuthStatus();
+        adminJSON("/api/admin/tunnel/status").then(renderTunnel).catch(() => undefined);
       } catch (error) {
         toast(error.message);
       } finally {
         $("#authorizeBtn").disabled = false;
+        updateTunnelControls();
       }
     });
 
@@ -1043,6 +1521,7 @@
         toast(error.message);
       } finally {
         $("#cfInstallBtn").disabled = false;
+        updateTunnelControls();
       }
     });
 

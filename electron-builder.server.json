@@ -1,0 +1,44 @@
+{
+  "appId": "com.szalo.server",
+  "productName": "Szalo Server",
+  "directories": {
+    "output": "dist-server"
+  },
+  "files": [
+    "electron/server-main.cjs",
+    "electron/server.cjs",
+    "electron/admin.html",
+    "electron/server-icon.png",
+    "electron/server-tray-icon.png",
+    "electron/server-icon.ico.png",
+    "electron/icon.png",
+    "package.json",
+    "node_modules/sharp/**/*",
+    "node_modules/@img/**/*"
+  ],
+  "extraMetadata": {
+    "main": "electron/server-main.cjs",
+    "type": "commonjs"
+  },
+  "asarUnpack": [
+    "node_modules/sharp/**/*",
+    "node_modules/@img/**/*"
+  ],
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ],
+    "icon": "electron/server-icon.png",
+    "signAndEditExecutable": false
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Szalo Server",
+    "installerIcon": "electron/server-icon.png",
+    "uninstallerIcon": "electron/server-icon.png"
+  }
+}
