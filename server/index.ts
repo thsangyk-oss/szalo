@@ -2,13 +2,15 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import multer from "multer";
 import { Server } from "socket.io";
+import { TunnelManager } from "./tunnel";
 import {
   AvatarSize,
   LoginQRCallbackEventType,
@@ -30,13 +32,33 @@ import {
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT ?? 4010);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
+const PORT = Number(process.env.PORT ?? 13113);
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  console.error(`Invalid PORT: ${process.env.PORT} — must be an integer between 1 and 65535.`);
+  process.exit(1);
+}
+
+const API_KEY = (process.env.API_KEY ?? "").trim();
+if (!API_KEY) {
+  console.error("API_KEY is required. Set API_KEY=<long-random-string> in .env or the environment.");
+  process.exit(1);
+}
+
+const CLIENT_ORIGIN_RAW = process.env.CLIENT_ORIGIN ?? "*";
+// "*" → allow any origin, no credentials. Otherwise comma-separated allow-list with credentials.
+const CORS_OPTIONS = CLIENT_ORIGIN_RAW.trim() === "*"
+  ? { origin: true, credentials: false }
+  : { origin: CLIENT_ORIGIN_RAW.split(",").map((value) => value.trim()).filter(Boolean), credentials: true };
+const SOCKET_CORS = CLIENT_ORIGIN_RAW.trim() === "*"
+  ? { origin: true, credentials: false }
+  : { origin: CORS_OPTIONS.origin as string[], credentials: true };
+
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const MAX_PROXY_BYTES = 100 * 1024 * 1024;
 const ROOT = process.cwd();
-const DATA_DIR = path.join(ROOT, ".zalo-manager");
-const DIST_DIR = process.env.DIST_DIR ?? path.join(ROOT, "build");
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(ROOT, ".zalo-manager");
 const SESSION_FILE = path.join(DATA_DIR, "session.json");
 const FRIENDS_CACHE_FILE = path.join(DATA_DIR, "friends.json");
 const CONVERSATIONS_CACHE_FILE = path.join(DATA_DIR, "conversations.json");
@@ -110,7 +132,7 @@ type ListenerEvent = {
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
-  cors: { origin: CLIENT_ORIGIN, credentials: true },
+  cors: SOCKET_CORS,
 });
 const upload = multer({
   limits: {
@@ -165,9 +187,94 @@ function createZalo() {
   });
 }
 
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(cors(CORS_OPTIONS));
 app.use(express.json({ limit: "2mb" }));
+
+// Always-public routes (no API key required) — health probe, admin UI, and uploaded files.
+const PUBLIC_PATHS = new Set(["/", "/api/health/ping", "/admin", "/admin/"]);
+
+function readApiKey(req: express.Request): string {
+  const header = req.header("x-api-key");
+  if (typeof header === "string" && header) return header.trim();
+  const auth = req.header("authorization");
+  if (typeof auth === "string" && auth.toLowerCase().startsWith("bearer ")) {
+    return auth.slice(7).trim();
+  }
+  const queryKey = req.query.api_key;
+  if (typeof queryKey === "string" && queryKey) return queryKey.trim();
+  return "";
+}
+
+function timingSafeEquals(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+app.use((req, res, next) => {
+  if (PUBLIC_PATHS.has(req.path)) return next();
+  const provided = readApiKey(req);
+  if (!provided || !timingSafeEquals(provided, API_KEY)) {
+    res.status(401).json({ error: "Invalid or missing API key" });
+    return;
+  }
+  next();
+});
+
+// Socket.IO auth — same key, sent via auth.token / auth.apiKey or query.
+io.use((socket, next) => {
+  const auth = socket.handshake.auth ?? {};
+  const candidate = String(
+    auth.apiKey ?? auth.token ?? socket.handshake.query?.api_key ?? socket.handshake.headers["x-api-key"] ?? "",
+  ).trim();
+  if (!candidate || !timingSafeEquals(candidate, API_KEY)) {
+    next(new Error("Invalid or missing API key"));
+    return;
+  }
+  next();
+});
+
 app.use("/downloads", express.static(UPLOAD_DIR));
+
+// Admin UI — single static HTML file shipped alongside the server. Public so
+// the user can paste their API key into it; the actions it triggers all hit
+// authenticated /api endpoints.
+//
+// We try a few likely locations because this file is served:
+//   - in dev via `tsx` from server/admin.html (next to this source file)
+//   - in the Electron-bundled build via esbuild from electron/admin.html
+//     (next to server.cjs — copied by build-server.cjs)
+function locateAdminHtml(): string {
+  // Likely locations:
+  //   - dev (tsx running server/index.ts):    server/admin.html
+  //   - bundled CJS (electron/server.cjs):    electron/admin.html (copied by build-server.cjs)
+  //   - electron-builder packaged resources:  resources/admin.html
+  const candidates = [
+    path.join(ROOT, "server", "admin.html"),
+    path.join(ROOT, "electron", "admin.html"),
+    path.join(ROOT, "admin.html"),
+  ];
+  if (typeof __dirname !== "undefined") {
+    candidates.unshift(path.join(__dirname, "admin.html"));
+  }
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return candidates[0];
+}
+const ADMIN_HTML = locateAdminHtml();
+app.get(["/admin", "/admin/"], (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(ADMIN_HTML, (error) => {
+    if (error) res.status(500).json({ error: errorMessage(error) });
+  });
+});
+// Convenience redirect for users hitting the bare server URL in a browser.
+app.get("/", (_req, res) => res.redirect(302, "/admin"));
+
+const tunnel = new TunnelManager();
+tunnel.on("status", (status) => {
+  io.emit("tunnel_status", status);
+});
 
 app.use((req, res, next) => {
   if (req.method === "GET" && !req.path.startsWith("/api") && !req.path.startsWith("/socket.io") && !req.path.startsWith("/downloads")) {
@@ -732,6 +839,25 @@ async function restoreSession() {
   }
 }
 
+app.get("/api/health/ping", (_req, res) => {
+  // Public endpoint — used by the desktop app to probe URL/connectivity before
+  // sending the API key. Does not expose any session info.
+  res.json({ ok: true, service: "szalo-server", serverStartedAt: SERVER_STARTED_AT });
+});
+
+// === Cloudflare tunnel admin ===
+app.get("/api/admin/tunnel/status", (_req, res) => {
+  res.json(tunnel.getStatus());
+});
+app.post("/api/admin/tunnel/start", async (_req, res) => {
+  const status = await tunnel.start(PORT);
+  res.json(status);
+});
+app.post("/api/admin/tunnel/stop", async (_req, res) => {
+  const status = await tunnel.stop();
+  res.json(status);
+});
+
 app.get("/api/status", (_req, res) => {
   res.json({ state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
 });
@@ -1264,23 +1390,7 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
 io.on("connection", (socket) => {
   socket.emit("status", { state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
   socket.emit("conversations", sortedConversations());
-});
-
-app.use(express.static(DIST_DIR));
-app.use((req, res, next) => {
-  if (
-    req.method !== "GET" ||
-    req.path.startsWith("/api") ||
-    req.path.startsWith("/socket.io") ||
-    req.path.startsWith("/downloads")
-  ) {
-    next();
-    return;
-  }
-
-  res.sendFile(path.join(DIST_DIR, "index.html"), (error) => {
-    if (error) next(error);
-  });
+  socket.emit("tunnel_status", tunnel.getStatus());
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -1304,7 +1414,10 @@ async function bootstrap() {
   await restoreSession();
 
   server.listen(PORT, () => {
-    console.log(`Szalo API listening on http://localhost:${PORT}`);
+    console.log(`Szalo server listening on http://localhost:${PORT}`);
+    console.log(`Admin UI: http://localhost:${PORT}/admin`);
+    console.log(`Data dir: ${DATA_DIR}`);
+    console.log(`CORS: ${CLIENT_ORIGIN_RAW}`);
   });
 }
 

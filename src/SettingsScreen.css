@@ -1,0 +1,127 @@
+.settings {
+  position: fixed;
+  inset: 0;
+  background: #0b0d12;
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  color: #e7eaf3;
+}
+
+.settingsCard {
+  width: min(440px, calc(100vw - 32px));
+  background: #14171e;
+  border: 1px solid #232733;
+  border-radius: 14px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.settingsCard h1 {
+  margin: 0;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsCard p.lead {
+  margin: 0;
+  color: #9aa1b1;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.settingsField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settingsField label {
+  font-size: 0.78rem;
+  color: #9aa1b1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settingsField input {
+  background: #0b0d12;
+  color: #e7eaf3;
+  border: 1px solid #232733;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.settingsField input:focus {
+  outline: none;
+  border-color: #7c5cff;
+}
+
+.settingsField small {
+  color: #6b7185;
+  font-size: 0.75rem;
+}
+
+.settingsActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.settingsActions button {
+  background: #1c2030;
+  color: #e7eaf3;
+  border: 1px solid #2a2f40;
+  border-radius: 9px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settingsActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settingsActions button.primary {
+  background: linear-gradient(135deg, #7c5cff, #5c7cff);
+  border-color: transparent;
+}
+
+.settingsActions button.ghost {
+  background: transparent;
+}
+
+.settingsStatus {
+  font-size: 0.85rem;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+}
+
+.settingsStatus.ok {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #86efac;
+}
+
+.settingsStatus.warn {
+  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fcd34d;
+}
+
+.settingsStatus.err {
+  background: rgba(255, 77, 106, 0.08);
+  border-color: rgba(255, 77, 106, 0.3);
+  color: #fca5a5;
+}

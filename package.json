@@ -1,47 +1,39 @@
 {
-  "name": "zalo-manager",
+  "name": "szalo",
   "private": true,
   "version": "1.0.0",
+  "description": "Szalo — Better Zalo. Electron desktop client + standalone server bridge.",
   "main": "electron/main.cjs",
+  "workspaces": [
+    "server"
+  ],
   "scripts": {
-    "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
+    "dev": "concurrently -k -n server,web,electron -c blue,green,magenta \"npm:dev:server\" \"npm:dev:web\" \"npm:dev:electron\"",
     "dev:web": "vite",
-    "dev:server": "tsx watch server/index.ts",
-    "dev:electron": "node electron/run-dev.cjs",
+    "dev:server": "npm --prefix server run dev",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development node electron/run-dev.cjs",
     "build": "tsc -b && vite build",
     "build:icons": "node electron/generate-icons.cjs",
     "build:server": "node electron/build-server.cjs",
     "lint": "eslint .",
     "smoke": "tsx scripts/smoke.ts",
-    "start": "tsx server/index.ts",
-    "start:bg": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-server.ps1",
-    "start:prod": "npm run build && npm start",
-    "start:electron": "npm run build && npm run build:server && electron .",
+    "start:server": "npm --prefix server start",
     "preview": "vite preview",
-    "pack": "npm run build && npm run build:icons && npm run build:server && electron-builder --dir",
-    "dist": "npm run build && npm run build:icons && npm run build:server && electron-builder"
+    "pack": "npm run build && npm run build:icons && electron-builder --dir",
+    "dist": "npm run build && npm run build:icons && electron-builder"
   },
   "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "multer": "^2.1.1",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "sharp": "^0.34.5",
-    "socket.io": "^4.8.3",
-    "zca-js": "^2.1.2"
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/multer": "^2.1.0",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^10.0.0",
+    "cross-env": "^10.1.0",
     "electron": "35.0.1",
     "electron-builder": "26.0.12",
     "esbuild": "0.28.0",
@@ -54,47 +46,23 @@
     "tsx": "^4.22.3",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.1"
   },
   "build": {
-    "appId": "com.zalo-manager.app",
-    "productName": "Zalo Manager",
+    "appId": "com.szalo.app",
+    "productName": "Szalo",
     "directories": {
       "output": "dist-electron"
     },
     "files": [
       "build/**/*",
       "electron/**/*",
-      "!electron/server.cjs",
-      "node_modules/**/*",
-      "!node_modules/electron/**/*",
-      "!node_modules/electron-builder/**/*",
-      "!node_modules/esbuild/**/*",
-      "!node_modules/typescript/**/*",
-      "!node_modules/vite/**/*",
-      "!node_modules/eslint*/**/*",
       "package.json"
     ],
     "extraMetadata": {
       "type": "commonjs"
     },
-    "asarUnpack": [
-      "node_modules/sharp/**/*",
-      "node_modules/@img/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "electron/server.cjs",
-        "to": "server.cjs"
-      },
-      {
-        "from": ".zalo-manager",
-        "to": ".zalo-manager",
-        "filter": [
-          "session.json"
-        ]
-      }
-    ],
     "win": {
       "target": [
         "nsis",

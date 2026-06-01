@@ -1,7 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Tag, X, Users } from 'lucide-react'
-import { io } from 'socket.io-client'
+import { Activity, Bell, BellOff, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Tag, X, Users } from 'lucide-react'
+import type { Socket } from 'socket.io-client'
+import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
+import { subscribeSocket } from './socket'
+import SettingsScreen from './SettingsScreen'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -22,8 +25,6 @@ const electron = (window as unknown as { electronAPI?: {
   isElectron: boolean
 } }).electronAPI
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4010' : '')
-const socket = io(API_URL, { transports: ['websocket'] })
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_FILE_COUNT = 10
 
@@ -172,7 +173,7 @@ function saveCategories(categories: Category[]) {
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${url}`, init)
+  const response = await fetch(apiUrl(url), authedInit(init))
   const payload = await response.json().catch(() => null) as { error?: string } | null
   if (!response.ok) {
     throw new Error(payload?.error || `HTTP ${response.status}`)
@@ -181,19 +182,27 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function reportClientEvent(event: string, detail?: unknown) {
-  fetch(`${API_URL}/api/client-events`, {
+  if (!isConfigured()) return
+  fetch(apiUrl('/api/client-events'), authedInit({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event, detail }),
-  }).catch(() => undefined)
+  })).catch(() => undefined)
 }
 
 function attachmentUrl(href?: string, title?: string) {
   if (!href) return undefined
-  if (!href.startsWith('http')) return `${API_URL}${href}`
+  const settings = getSettings()
+  const key = settings.apiKey ? `&api_key=${encodeURIComponent(settings.apiKey)}` : ''
+  if (!href.startsWith('http')) {
+    // Relative server path (e.g. /downloads/...) — append the key as a query
+    // param because <img>/<a> don't carry our auth header.
+    const sep = href.includes('?') ? '&' : '?'
+    return `${apiUrl(href)}${settings.apiKey ? `${sep}api_key=${encodeURIComponent(settings.apiKey)}` : ''}`
+  }
   const params = new URLSearchParams({ url: href })
   if (title) params.set('name', title)
-  return `${API_URL}/api/attachments/proxy?${params.toString()}`
+  return `${apiUrl('/api/attachments/proxy')}?${params.toString()}${key}`
 }
 
 function isImageAttachment(attachment: ChatMessage['attachments'][number]) {
@@ -297,6 +306,9 @@ function avatarGradient(seed: string) {
 }
 
 function App() {
+  const [configured, setConfigured] = useState(isConfigured())
+  const [showSettings, setShowSettings] = useState(false)
+  const [socket, setSocket] = useState<Socket | null>(null)
   const [status, setStatus] = useState<Status>({ state: 'offline', account: null, selfId: '', qrImage: '', error: '' })
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -312,7 +324,7 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [opening, setOpening] = useState(false)
   const [sending, setSending] = useState(false)
-  const [socketConnected, setSocketConnected] = useState(socket.connected)
+  const [socketConnected, setSocketConnected] = useState(false)
   const [typingThreads, setTypingThreads] = useState<Record<string, number>>({})
   const [dragActive, setDragActive] = useState(false)
   const [showAttachments, setShowAttachments] = useState(false)
@@ -391,6 +403,18 @@ function App() {
   }, [conversations])
 
   useEffect(() => {
+    // Subscribe to the live socket. The socket module rebuilds it whenever
+    // the user changes settings, so the App re-runs all socket-bound effects.
+    return subscribeSocket((next) => {
+      setSocket(next)
+      setSocketConnected(Boolean(next?.connected))
+      setConfigured(isConfigured())
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!configured || !socket) return
+
     const handleConnect = () => {
       setSocketConnected(true)
       reportClientEvent('socket-connect', { socketId: socket.id })
@@ -439,7 +463,7 @@ function App() {
             electron.sendNotification({ title, body, threadId: message.threadId, type: message.type })
             electron.flashFrame()
           } else if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Zalo Manager', { body: `${title}: ${body}` })
+            new Notification('Szalo', { body: `${title}: ${body}` })
           }
         }
       }
@@ -468,7 +492,7 @@ function App() {
 
     reportClientEvent('app-open', {
       href: window.location.href,
-      apiUrl: API_URL,
+      apiUrl: getSettings().baseUrl,
       notificationPermission: 'Notification' in window ? Notification.permission : 'unsupported',
       userAgent: navigator.userAgent,
       isElectron: Boolean(electron),
@@ -527,7 +551,7 @@ function App() {
       window.removeEventListener('error', handleBrowserError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
-  }, [])
+  }, [configured, socket])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -542,16 +566,16 @@ function App() {
   }, [messages])
 
   useEffect(() => {
-    document.title = unreadCount > 0 ? `(${unreadCount}) Zalo Manager` : 'Zalo Manager'
+    document.title = unreadCount > 0 ? `(${unreadCount}) Szalo` : 'Szalo'
     if (electron) electron.setUnreadCount(unreadCount)
   }, [unreadCount])
 
   useEffect(() => {
-    if (status.state !== 'online') return
+    if (!configured || status.state !== 'online') return
     apiJson<Conversation[]>('/api/conversations')
       .then(setConversations)
       .catch((error: Error) => setNotice(error.message))
-  }, [status.state])
+  }, [configured, status.state])
 
   async function startLogin() {
     try {
@@ -904,9 +928,16 @@ function App() {
 
   return (
     <main className="shell">
+      {(!configured || showSettings) && (
+        <SettingsScreen
+          dismissible={configured}
+          onClose={() => setShowSettings(false)}
+          onSaved={() => { setShowSettings(false); setConfigured(true) }}
+        />
+      )}
       {/* === ICON RAIL === */}
       <nav className="iconRail">
-        <img className="appLogo" src="/szalo-icon.png" alt="Zalo Manager" />
+        <img className="appLogo" src="/szalo-icon.png" alt="Szalo" />
         <button className={!showCategoryManager && !showNotifications && !showDiagnostics && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setSelectedCategory(null); setConversationFilter('all') }} title="Tất cả chat">
           <MessageCircle size={20} />
           {unreadCount > 0 && <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
@@ -955,6 +986,9 @@ function App() {
           <Activity size={20} />
         </button>
         <span className="railSpacer" />
+        <button className="railButton" onClick={() => setShowSettings(true)} title="Cài đặt server">
+          <SettingsIcon size={20} />
+        </button>
         <button className="railButton" onClick={syncContacts} disabled={syncing} title={syncing ? 'Đang đồng bộ' : 'Đồng bộ'}>
           <RefreshCw size={20} />
         </button>
@@ -979,7 +1013,7 @@ function App() {
               </>
             ) : (
               <>
-                <h1>Zalo Manager</h1>
+                <h1>Szalo</h1>
                 <p>{status.state === 'online' ? `${status.counts?.total ?? conversations.length} hội thoại` : 'Chưa đăng nhập'}</p>
               </>
             )}

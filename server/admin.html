@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Szalo Server Admin</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #14171e;
+      --panel-2: #1c2030;
+      --border: #232733;
+      --text: #e7eaf3;
+      --muted: #9aa1b1;
+      --accent: #7c5cff;
+      --accent-2: #5c7cff;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #ff4d6a;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 32px 24px 80px; }
+    h1 { margin: 0 0 6px; font-size: 1.7rem; display: flex; align-items: center; gap: 10px; }
+    h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    p.lead { margin: 0 0 24px; color: var(--muted); }
+    main { max-width: 920px; margin: 0 auto; display: grid; gap: 18px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row > * { min-width: 0; }
+    .grid2 { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    @media (max-width: 720px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+    label { display: block; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: 9px; padding: 9px 11px; font: inherit;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    button {
+      background: var(--panel-2); color: var(--text); border: 1px solid #2a2f40;
+      border-radius: 9px; padding: 8px 14px; cursor: pointer; font: inherit;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; }
+    button.danger { background: rgba(255, 77, 106, 0.15); border-color: rgba(255, 77, 106, 0.4); color: #fca5a5; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; border: 1px solid transparent; }
+    .pill.ok { background: rgba(52, 211, 153, 0.1); color: #86efac; border-color: rgba(52, 211, 153, 0.3); }
+    .pill.warn { background: rgba(251, 191, 36, 0.1); color: #fcd34d; border-color: rgba(251, 191, 36, 0.3); }
+    .pill.err { background: rgba(255, 77, 106, 0.1); color: #fca5a5; border-color: rgba(255, 77, 106, 0.3); }
+    .pill.muted { background: var(--panel-2); color: var(--muted); border-color: var(--border); }
+    code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; font-size: 0.85em; word-break: break-all; }
+    .stack { display: flex; flex-direction: column; gap: 14px; }
+    .urlBox { display: flex; gap: 8px; align-items: stretch; }
+    .urlBox input { font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, monospace; }
+    .qr { background: white; padding: 8px; border-radius: 12px; display: inline-block; }
+    .qr img { display: block; width: 220px; height: 220px; }
+    .empty { color: var(--muted); font-size: 0.9rem; padding: 14px 0; }
+    .error { color: #fca5a5; font-size: 0.85rem; }
+    .logs {
+      max-height: 180px; overflow: auto; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 9px; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 0.75rem; color: var(--muted); white-space: pre-wrap;
+    }
+    .keyHint { font-size: 0.78rem; color: var(--muted); margin-top: 8px; }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--panel); border: 1px solid var(--border); padding: 10px 16px;
+      border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      font-size: 0.85rem; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>🛰️ Szalo Server</h1>
+      <p class="lead">Bridge Zalo cố định cho desktop client. Nhập API key để đăng nhập Zalo và xuất đường dẫn public qua Cloudflare Tunnel.</p>
+    </header>
+
+    <section class="card">
+      <h2>API key</h2>
+      <p class="keyHint">Khóa này phải khớp với <code>API_KEY</code> trong file <code>.env</code> của server. Trang admin lưu nó vào <code>localStorage</code> của trình duyệt — không gửi đi đâu khác.</p>
+      <div class="urlBox">
+        <input id="apiKey" type="password" placeholder="Dán API key vào đây" autocomplete="off" />
+        <button id="apiKeyShow" type="button" title="Hiện/ẩn">👁</button>
+        <button id="apiKeySave" type="button" class="primary">Lưu &amp; xác thực</button>
+      </div>
+      <div id="apiKeyStatus" style="margin-top: 10px;"></div>
+    </section>
+
+    <section class="grid2">
+      <div class="card">
+        <h2>📡 Server URL</h2>
+        <div class="stack">
+          <div>
+            <label>Local (LAN)</label>
+            <div class="urlBox">
+              <input id="localUrl" type="text" readonly />
+              <button data-copy="#localUrl" type="button">Copy</button>
+            </div>
+          </div>
+          <div>
+            <label>Public (Cloudflare Tunnel)</label>
+            <div class="urlBox">
+              <input id="publicUrl" type="text" readonly placeholder="Chưa khởi tạo tunnel" />
+              <button data-copy="#publicUrl" type="button">Copy</button>
+            </div>
+            <div id="tunnelStatus" style="margin-top: 10px;" class="row"></div>
+          </div>
+          <div class="row">
+            <button id="tunnelStart" type="button" class="primary">▶ Khởi tạo tunnel</button>
+            <button id="tunnelStop" type="button" class="danger">■ Dừng tunnel</button>
+            <button id="tunnelRefresh" type="button">↻ Làm mới</button>
+          </div>
+          <details>
+            <summary style="cursor: pointer; color: var(--muted); font-size: 0.85rem;">Log cloudflared</summary>
+            <pre id="tunnelLogs" class="logs">Chưa có log</pre>
+          </details>
+          <p class="keyHint">
+            Cần cài <code>cloudflared</code>: tải tại
+            <a href="https://github.com/cloudflare/cloudflared/releases" target="_blank" style="color: var(--accent);">github.com/cloudflare/cloudflared</a>
+            và đảm bảo lệnh có trong PATH. Quick Tunnel sinh subdomain <code>*.trycloudflare.com</code> miễn phí, không cần tài khoản Cloudflare.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>📱 Đăng nhập Zalo</h2>
+        <div class="stack">
+          <div id="loginStatus" class="row"></div>
+          <div id="loginBody">
+            <div class="empty">Đang tải trạng thái...</div>
+          </div>
+          <div class="row">
+            <button id="loginStart" type="button" class="primary">Tạo QR đăng nhập</button>
+            <button id="loginLogout" type="button" class="danger">Đăng xuất</button>
+            <button id="loginRefresh" type="button">↻ Làm mới</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>📊 Thống kê</h2>
+      <div id="counts" class="row" style="gap: 18px;"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // ======= state =======
+    const STORAGE_KEY = "szalo-admin-key";
+    let apiKey = localStorage.getItem(STORAGE_KEY) || "";
+    let socket = null;
+    let lastStatus = null;
+
+    // ======= utils =======
+    function $(selector) { return document.querySelector(selector); }
+    function authedFetch(path, init = {}) {
+      const headers = new Headers(init.headers || {});
+      if (apiKey) headers.set("x-api-key", apiKey);
+      return fetch(path, { ...init, headers });
+    }
+    async function authedJSON(path, init) {
+      const response = await authedFetch(path, init);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error((payload && payload.error) || `HTTP ${response.status}`);
+      return payload;
+    }
+    function toast(message) {
+      const node = $("#toast");
+      node.textContent = message;
+      node.classList.add("show");
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => node.classList.remove("show"), 1800);
+    }
+
+    // ======= API key =======
+    $("#apiKey").value = apiKey;
+    $("#apiKeyShow").addEventListener("click", () => {
+      const input = $("#apiKey");
+      input.type = input.type === "password" ? "text" : "password";
+    });
+    $("#apiKeySave").addEventListener("click", async () => {
+      apiKey = $("#apiKey").value.trim();
+      localStorage.setItem(STORAGE_KEY, apiKey);
+      const statusEl = $("#apiKeyStatus");
+      statusEl.innerHTML = '<span class="pill muted">Đang kiểm tra...</span>';
+      try {
+        await authedJSON("/api/status");
+        statusEl.innerHTML = '<span class="pill ok">✔ Đã xác thực — đang kết nối realtime</span>';
+        connectSocket();
+        refreshAll();
+      } catch (error) {
+        statusEl.innerHTML = `<span class="pill err">✘ ${error.message}</span>`;
+      }
+    });
+
+    // ======= copy buttons =======
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-copy]");
+      if (!button) return;
+      const target = $(button.getAttribute("data-copy"));
+      if (!target || !target.value) return;
+      try {
+        await navigator.clipboard.writeText(target.value);
+        toast("Đã copy");
+      } catch {
+        target.select();
+        document.execCommand("copy");
+        toast("Đã copy");
+      }
+    });
+
+    // ======= local URL =======
+    $("#localUrl").value = `${location.protocol}//${location.host}`;
+
+    // ======= login UI =======
+    function renderLogin(status) {
+      lastStatus = status;
+      const stateEl = $("#loginStatus");
+      const bodyEl = $("#loginBody");
+      const stateLabels = {
+        offline: ["err", "Chưa đăng nhập"],
+        waiting_qr: ["warn", "Chờ quét QR"],
+        scanned: ["warn", "Đã quét, chờ xác nhận"],
+        online: ["ok", "Đang online"],
+        error: ["err", "Lỗi: " + (status.error || "không rõ")],
+      };
+      const [pill, label] = stateLabels[status.state] || ["muted", status.state];
+      const accountName = status.account && (status.account.displayName || status.account.name || status.account.username) || "";
+      stateEl.innerHTML = `<span class="pill ${pill}">${label}</span>` +
+        (status.selfId ? `<span class="pill muted">ID ${status.selfId}</span>` : "") +
+        (accountName ? `<span class="pill muted">${accountName}</span>` : "");
+
+      if (status.state === "online") {
+        bodyEl.innerHTML = '<div class="empty">Listener đang chạy. Tin nhắn realtime sẵn sàng cho client.</div>';
+      } else if (status.qrImage) {
+        bodyEl.innerHTML = `<div class="qr"><img src="${status.qrImage}" alt="Zalo QR" /></div>` +
+          `<p style="margin-top: 12px; color: var(--muted); font-size: 0.9rem;">Mở app Zalo → Cài đặt → Quét QR để đăng nhập.</p>`;
+      } else if (status.state === "scanned") {
+        bodyEl.innerHTML = '<div class="empty">Đã quét QR. Mở app Zalo và bấm <strong>Đăng nhập</strong> để xác nhận.</div>';
+      } else if (status.error) {
+        bodyEl.innerHTML = `<div class="error">${status.error}</div>`;
+      } else {
+        bodyEl.innerHTML = '<div class="empty">Bấm <strong>Tạo QR đăng nhập</strong> để bắt đầu.</div>';
+      }
+
+      const counts = status.counts || {};
+      $("#counts").innerHTML = [
+        ["Hội thoại", counts.total],
+        ["Cá nhân", counts.users],
+        ["Nhóm", counts.groups],
+      ].map(([label, value]) => `<span class="pill muted">${label}: <strong style="color: var(--text); margin-left: 4px;">${value ?? 0}</strong></span>`).join("");
+    }
+
+    $("#loginStart").addEventListener("click", async () => {
+      try { await authedJSON("/api/login/qr", { method: "POST" }); }
+      catch (error) { toast(error.message); }
+    });
+    $("#loginLogout").addEventListener("click", async () => {
+      if (!confirm("Đăng xuất tài khoản Zalo khỏi server?")) return;
+      try { await authedJSON("/api/logout", { method: "POST" }); toast("Đã đăng xuất"); refreshLogin(); }
+      catch (error) { toast(error.message); }
+    });
+    $("#loginRefresh").addEventListener("click", refreshLogin);
+
+    async function refreshLogin() {
+      try {
+        const status = await authedJSON("/api/status");
+        renderLogin(status);
+      } catch (error) {
+        $("#loginStatus").innerHTML = `<span class="pill err">${error.message}</span>`;
+      }
+    }
+
+    // ======= tunnel UI =======
+    function renderTunnel(status) {
+      $("#publicUrl").value = status.publicUrl || "";
+      const stateEl = $("#tunnelStatus");
+      const labels = {
+        stopped: ["muted", "Tắt"],
+        starting: ["warn", "Đang khởi tạo..."],
+        running: ["ok", "Đang chạy"],
+        error: ["err", status.error || "Lỗi"],
+      };
+      const [pill, label] = labels[status.state] || ["muted", status.state];
+      stateEl.innerHTML = `<span class="pill ${pill}">${label}</span>` +
+        (status.error && status.state !== "error" ? `<span class="pill warn">${status.error}</span>` : "");
+      $("#tunnelLogs").textContent = (status.recentLogs && status.recentLogs.length)
+        ? status.recentLogs.join("\n") : "Chưa có log";
+    }
+
+    $("#tunnelStart").addEventListener("click", async () => {
+      try {
+        const result = await authedJSON("/api/admin/tunnel/start", { method: "POST" });
+        renderTunnel(result);
+      } catch (error) { toast(error.message); }
+    });
+    $("#tunnelStop").addEventListener("click", async () => {
+      try {
+        const result = await authedJSON("/api/admin/tunnel/stop", { method: "POST" });
+        renderTunnel(result);
+      } catch (error) { toast(error.message); }
+    });
+    $("#tunnelRefresh").addEventListener("click", refreshTunnel);
+
+    async function refreshTunnel() {
+      try {
+        const status = await authedJSON("/api/admin/tunnel/status");
+        renderTunnel(status);
+      } catch (error) { /* unauthenticated yet — ignore */ }
+    }
+
+    // ======= socket =======
+    function connectSocket() {
+      if (socket) { try { socket.disconnect(); } catch {} }
+      if (!apiKey) return;
+      socket = io({ transports: ["websocket"], auth: { apiKey } });
+      socket.on("status", renderLogin);
+      socket.on("tunnel_status", renderTunnel);
+    }
+
+    function refreshAll() {
+      refreshLogin();
+      refreshTunnel();
+    }
+
+    // ======= boot =======
+    if (apiKey) {
+      $("#apiKeyStatus").innerHTML = '<span class="pill muted">Đang kết nối...</span>';
+      authedJSON("/api/status").then((status) => {
+        $("#apiKeyStatus").innerHTML = '<span class="pill ok">✔ Đã xác thực</span>';
+        connectSocket();
+        renderLogin(status);
+        refreshTunnel();
+      }).catch((error) => {
+        $("#apiKeyStatus").innerHTML = `<span class="pill err">✘ ${error.message}</span>`;
+      });
+    } else {
+      $("#apiKeyStatus").innerHTML = '<span class="pill warn">Nhập API key để bắt đầu</span>';
+    }
+  </script>
+</body>
+</html>

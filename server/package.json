@@ -1,0 +1,30 @@
+{
+  "name": "szalo-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Szalo backend — fixed Zalo account bridge with REST + Socket.IO API",
+  "main": "index.ts",
+  "scripts": {
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts",
+    "build": "tsc -p tsconfig.json",
+    "build:bundle": "node ../electron/build-server.cjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "sharp": "^0.34.5",
+    "socket.io": "^4.8.3",
+    "zca-js": "^2.1.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^24.12.3",
+    "tsx": "^4.22.3",
+    "typescript": "~6.0.2"
+  }
+}

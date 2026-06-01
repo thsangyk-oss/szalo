@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { io } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
 import { Send, X, ArrowLeft, MessageCircle, Image as ImageIcon, FileText } from 'lucide-react'
+import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
+import { subscribeSocket } from './socket'
 import './Bubble.css'
-
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4010' : '')
-const socket = io(API_URL, { transports: ['websocket'] })
 
 const electron = (window as unknown as { electronAPI?: {
   openBubblePanel: () => void
@@ -45,10 +44,21 @@ type Conversation = {
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${url}`, init)
+  const response = await fetch(apiUrl(url), authedInit(init))
   const payload = await response.json().catch(() => null) as { error?: string } | null
   if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`)
   return payload as T
+}
+
+function attachmentSrc(href?: string) {
+  if (!href) return undefined
+  const settings = getSettings()
+  const key = settings.apiKey ? `&api_key=${encodeURIComponent(settings.apiKey)}` : ''
+  if (href.startsWith('http')) {
+    return `${apiUrl('/api/attachments/proxy')}?url=${encodeURIComponent(href)}${key}`
+  }
+  const sep = href.includes('?') ? '&' : '?'
+  return `${apiUrl(href)}${settings.apiKey ? `${sep}api_key=${encodeURIComponent(settings.apiKey)}` : ''}`
 }
 
 const AVATAR_GRADIENTS = [
@@ -106,6 +116,7 @@ function unreadByConversation(conversations: Conversation[]) {
 export function BubbleDock() {
   const [threads, setThreads] = useState<BubbleThread[]>((electron?.getBubbleThreads() ?? []).map(normalizeThread))
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
+  const [socket, setSocket] = useState<Socket | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const dragRef = useRef<{ startX: number; startY: number; dragging: boolean; moved: boolean }>({
     startX: 0, startY: 0, dragging: false, moved: false
@@ -145,7 +156,10 @@ export function BubbleDock() {
     }
   }, [])
 
+  useEffect(() => subscribeSocket(setSocket), [])
+
   useEffect(() => {
+    if (!socket || !isConfigured()) return
     const handleConversations = (items: Conversation[]) => {
       setUnreadMap(unreadByConversation(items))
       setThreads((current) => syncThreadsWithConversations(current, items))
@@ -153,7 +167,7 @@ export function BubbleDock() {
     apiJson<Conversation[]>('/api/conversations').then(handleConversations).catch(() => undefined)
     socket.on('conversations', handleConversations)
     return () => { socket.off('conversations', handleConversations) }
-  }, [])
+  }, [socket])
 
   function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     e.preventDefault()
@@ -240,12 +254,15 @@ export function BubblePanel() {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
+  const [socket, setSocket] = useState<Socket | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     document.body.classList.add('bubblePanelPage')
     return () => { document.body.classList.remove('bubblePanelPage') }
   }, [])
+
+  useEffect(() => subscribeSocket(setSocket), [])
 
   useEffect(() => {
     if (electron) {
@@ -262,6 +279,7 @@ export function BubblePanel() {
   }, [])
 
   useEffect(() => {
+    if (!socket || !isConfigured()) return
     const handleConversations = (items: Conversation[]) => {
       const byId = new Map(items.map((item) => [item.id, item]))
       setUnreadMap(unreadByConversation(items))
@@ -273,9 +291,10 @@ export function BubblePanel() {
     return () => {
       socket.off('conversations', handleConversations)
     }
-  }, [])
+  }, [socket])
 
   useEffect(() => {
+    if (!socket) return
     const handleMessage = (message: ChatMessage) => {
       if (activeThread && message.threadId === activeThread.threadId) {
         setMessages((prev) => {
@@ -286,7 +305,7 @@ export function BubblePanel() {
     }
     socket.on('message', handleMessage)
     return () => { socket.off('message', handleMessage) }
-  }, [activeThread])
+  }, [activeThread, socket])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -403,7 +422,7 @@ export function BubblePanel() {
                   {!msg.isSelf && msg.senderName && <small className="pSender">{msg.senderName}</small>}
                   {msg.text && <p>{msg.text}</p>}
                   {imageSrc && (
-                    <img className="pMsgImage" src={imageSrc?.startsWith('http') ? `${API_URL}/api/attachments/proxy?url=${encodeURIComponent(imageSrc)}` : `${API_URL}${imageSrc}`} alt="" />
+                    <img className="pMsgImage" src={attachmentSrc(imageSrc)} alt="" />
                   )}
                   {otherAttach.length > 0 && (
                     <small className="pAttach"><FileText size={11} /> {otherAttach.length} tệp đính kèm</small>

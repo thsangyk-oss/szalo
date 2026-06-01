@@ -2,17 +2,15 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, scre
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-const http = require('http')
-const { fork } = require('child_process')
 
 // Debug log file (always log to a known path, fallback to temp dir)
-const LOG_FILE = path.join(os.tmpdir(), 'zalo-manager.log')
+const LOG_FILE = path.join(os.tmpdir(), 'szalo.log')
 
 // Try multiple log locations to ensure at least one works
 const LOG_PATHS = [
   LOG_FILE,
-  path.join(os.homedir(), 'zalo-manager.log'),
-  path.join(__dirname, '..', '..', 'zalo-manager.log'),
+  path.join(os.homedir(), 'szalo.log'),
+  path.join(__dirname, '..', '..', 'szalo.log'),
 ]
 
 function logToFile(...args) {
@@ -35,7 +33,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 const isDev = process.env.NODE_ENV === 'development'
-const PORT = Number(process.env.PORT ?? 4010)
+const DEV_URL = process.env.SZALO_DEV_URL || 'http://localhost:5173'
 const ICON_PATH = path.join(__dirname, 'icon.png')
 const TRAY_ICON_PATH = path.join(__dirname, 'tray-icon.png')
 const MAX_BUBBLES = 5
@@ -45,7 +43,6 @@ let mainWindow = null
 let bubbleDockWindow = null
 let bubblePanelWindow = null
 let tray = null
-let serverProcess = null
 let isQuitting = false
 let unreadCount = 0
 let bubbleThreads = [] // [{threadId, type, name, avatar}]
@@ -53,54 +50,20 @@ let bubbleDockDragTimer = null
 let bubbleDockDragOffset = null
 let bubbleDockDragTimeout = null
 
-function getBaseUrl() {
-  return isDev ? 'http://localhost:5173' : `http://localhost:${PORT}`
+function getRendererBuildDir() {
+  // In dev, we use the live Vite server (DEV_URL).
+  // In packaged builds, the renderer is bundled into the asar at "build/".
+  return path.join(__dirname, '..', 'build')
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function getServerScriptPath() {
-  const candidates = app.isPackaged
-    ? [
-        path.join(process.resourcesPath || '', 'server.cjs'),
-        path.join(__dirname, 'server.cjs'),
-      ]
-    : [
-        path.join(__dirname, 'server.cjs'),
-        path.join(__dirname, '..', 'electron', 'server.cjs'),
-      ]
-  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || candidates[0]
-}
-
-function getDistDir() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath || path.join(__dirname, '..'), 'app.asar', 'build')
-    : path.join(__dirname, '..', 'build')
-}
-
-function probeServer() {
-  return new Promise((resolve) => {
-    const request = http.get(`http://localhost:${PORT}/api/health`, (response) => {
-      response.resume()
-      resolve(Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 500))
-    })
-    request.on('error', () => resolve(false))
-    request.setTimeout(1000, () => {
-      request.destroy()
-      resolve(false)
-    })
-  })
-}
-
-async function waitForServer(timeoutMs = 15000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await probeServer()) return true
-    await delay(250)
+function loadRenderer(window, hash = '') {
+  if (isDev) {
+    const url = hash ? `${DEV_URL}/${hash.startsWith('#') ? hash : `#${hash}`}` : DEV_URL
+    window.loadURL(url)
+  } else {
+    const filePath = path.join(getRendererBuildDir(), 'index.html')
+    window.loadFile(filePath, hash ? { hash: hash.startsWith('#') ? hash.slice(1) : hash } : undefined)
   }
-  return false
 }
 
 function normalizeBubbleThread(data) {
@@ -187,7 +150,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     icon: ICON_PATH,
-    title: 'Zalo Manager',
+    title: 'Szalo',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -200,7 +163,7 @@ function createWindow() {
     mainWindow.show()
   })
 
-  mainWindow.loadURL(getBaseUrl())
+  loadRenderer(mainWindow)
 
   // Open all external links (window.open / target=_blank) in user's default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -211,10 +174,11 @@ function createWindow() {
     return { action: 'allow' }
   })
 
-  // Block in-app navigation to external URLs — open them in browser instead
+  // Block in-app navigation to external URLs — open them in browser instead.
+  // The renderer itself lives at file:// (packaged) or http://localhost:5173 (dev).
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const baseUrl = getBaseUrl()
-    if (!url.startsWith(baseUrl) && (url.startsWith('http://') || url.startsWith('https://'))) {
+    const isLocalRenderer = url.startsWith('file://') || url.startsWith(DEV_URL)
+    if (!isLocalRenderer && (url.startsWith('http://') || url.startsWith('https://'))) {
       event.preventDefault()
       shell.openExternal(url)
     }
@@ -247,7 +211,7 @@ function createBubbleDock() {
     x: screenWidth - BUBBLE_DOCK_SIZE - 16,
     y: screenHeight - 200,
     icon: ICON_PATH,
-    title: 'Zalo Bubble',
+    title: 'Szalo Bubble',
     alwaysOnTop: true,
     frame: false,
     transparent: true,
@@ -275,7 +239,7 @@ function createBubbleDock() {
     lockBubbleDockSize()
   })
 
-  bubbleDockWindow.loadURL(`${getBaseUrl()}#/bubble-dock`)
+  loadRenderer(bubbleDockWindow, '#/bubble-dock')
 
   bubbleDockWindow.on('closed', () => {
     stopBubbleDockDrag()
@@ -323,7 +287,7 @@ function createBubblePanel() {
     x: panelX,
     y: panelY,
     icon: ICON_PATH,
-    title: 'Zalo Chat',
+    title: 'Szalo Chat',
     alwaysOnTop: true,
     frame: false,
     transparent: false,
@@ -341,7 +305,7 @@ function createBubblePanel() {
     },
   })
 
-  bubblePanelWindow.loadURL(`${getBaseUrl()}#/bubble-panel`)
+  loadRenderer(bubblePanelWindow, '#/bubble-panel')
 
   // External links → browser
   bubblePanelWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -379,9 +343,12 @@ function sendThreadsToAll() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromPath(TRAY_ICON_PATH).resize({ width: 16, height: 16 })
+  // tray-icon.png is generated by build:icons; if missing, fall back to the app icon
+  // so the tray still works in development before icons have been generated.
+  const trayIconPath = fs.existsSync(TRAY_ICON_PATH) ? TRAY_ICON_PATH : ICON_PATH
+  const icon = nativeImage.createFromPath(trayIconPath).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
-  tray.setToolTip('Zalo Manager')
+  tray.setToolTip('Szalo')
   updateTrayMenu()
 
   tray.on('click', () => {
@@ -398,7 +365,7 @@ function createTray() {
 function updateTrayMenu() {
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: unreadCount > 0 ? `Zalo Manager (${unreadCount} chưa đọc)` : 'Zalo Manager',
+      label: unreadCount > 0 ? `Szalo (${unreadCount} chưa đọc)` : 'Szalo',
       enabled: false,
     },
     { type: 'separator' },
@@ -438,45 +405,7 @@ function updateTrayMenu() {
     },
   ])
   tray.setContextMenu(contextMenu)
-  tray.setToolTip(unreadCount > 0 ? `Zalo Manager (${unreadCount} chưa đọc)` : 'Zalo Manager')
-}
-
-function startServer() {
-  if (isDev) return
-
-  const serverScript = getServerScriptPath()
-  const distDir = getDistDir()
-  logToFile('Starting server:', serverScript, 'exists:', fs.existsSync(serverScript), 'DIST_DIR:', distDir)
-  serverProcess = fork(serverScript, [], {
-    env: { ...process.env, PORT: String(PORT), DIST_DIR: distDir },
-    stdio: 'pipe',
-  })
-
-  serverProcess.stdout?.on('data', (data) => {
-    logToFile('[server]', data.toString().trim())
-  })
-
-  serverProcess.stderr?.on('data', (data) => {
-    logToFile('[server-err]', data.toString().trim())
-  })
-
-  serverProcess.on('error', (err) => {
-    logToFile('[server] FORK ERROR:', err?.stack || String(err))
-  })
-
-  serverProcess.on('exit', (code) => {
-    logToFile(`Server process exited with code ${code}`)
-    if (!isQuitting) {
-      setTimeout(startServer, 2000)
-    }
-  })
-}
-
-function stopServer() {
-  if (serverProcess) {
-    serverProcess.kill()
-    serverProcess = null
-  }
+  tray.setToolTip(unreadCount > 0 ? `Szalo (${unreadCount} chưa đọc)` : 'Szalo')
 }
 
 // === IPC Handlers ===
@@ -485,7 +414,7 @@ ipcMain.on('notification', (_event, { title, body, threadId, type }) => {
   if (!Notification.isSupported()) return
 
   const notification = new Notification({
-    title: title || 'Zalo Manager',
+    title: title || 'Szalo',
     body: body || '',
     icon: ICON_PATH,
     silent: false,
@@ -510,9 +439,9 @@ ipcMain.on('unread-count', (_event, count) => {
 
   if (mainWindow) {
     if (count > 0) {
-      mainWindow.setTitle(`(${count}) Zalo Manager`)
+      mainWindow.setTitle(`(${count}) Szalo`)
     } else {
-      mainWindow.setTitle('Zalo Manager')
+      mainWindow.setTitle('Szalo')
     }
   }
 })
@@ -596,22 +525,10 @@ ipcMain.on('move-bubble-dock', (_event, { dx, dy }) => {
 // === App Lifecycle ===
 
 app.on('ready', () => {
-  logToFile('App ready, isDev:', isDev, 'PORT:', PORT)
+  logToFile('App ready, isDev:', isDev, 'devUrl:', DEV_URL)
   logToFile('Resource paths:', { app: app.getAppPath(), resources: process.resourcesPath })
-  startServer()
-
-  void (async () => {
-    if (!isDev) {
-      const serverReady = await waitForServer()
-      logToFile('Server readiness:', serverReady ? 'ready' : 'timeout')
-    }
-    createWindow()
-    createTray()
-  })().catch((error) => {
-    logToFile('Window startup failed:', error?.stack || String(error))
-    createWindow()
-    createTray()
-  })
+  createWindow()
+  createTray()
 })
 
 app.on('window-all-closed', () => {
@@ -628,7 +545,6 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
-  stopServer()
 })
 
 // Prevent multiple instances
