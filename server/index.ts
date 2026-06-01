@@ -1750,6 +1750,124 @@ app.get("/api/search/messages", (req, res) => {
   res.json(results);
 });
 
+// === CRM Tools: Quick Replies, Labels, Auto-Reply ===
+
+app.get("/api/quick-messages", async (_req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.getQuickMessageList();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.post("/api/quick-messages", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { keyword, title } = req.body as { keyword?: string; title?: string };
+  if (!keyword?.trim() || !title?.trim()) {
+    res.status(400).json({ error: "Cần keyword và title" });
+    return;
+  }
+  try {
+    const result = await zaloApi.addQuickMessage({ keyword: keyword.trim(), title: title.trim() });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.delete("/api/quick-messages/:id", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.removeQuickMessage(Number(req.params.id) || req.params.id as unknown as number);
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.get("/api/labels", async (_req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.getLabels();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.put("/api/labels", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { labelData, version } = req.body as { labelData?: unknown[]; version?: number };
+  if (!Array.isArray(labelData) || typeof version !== "number") {
+    res.status(400).json({ error: "Cần labelData (array) và version (number)" });
+    return;
+  }
+  try {
+    const result = await zaloApi.updateLabels({ labelData: labelData as Parameters<typeof zaloApi.updateLabels>[0]["labelData"], version });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.get("/api/auto-reply", async (_req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.getAutoReplyList();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.post("/api/auto-reply", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { content, isEnable, startTime, endTime, scope, uids } = req.body as {
+    content?: string; isEnable?: boolean; startTime?: number; endTime?: number;
+    scope?: number; uids?: string | string[];
+  };
+  if (!content?.trim()) {
+    res.status(400).json({ error: "Cần content" });
+    return;
+  }
+  try {
+    const result = await zaloApi.createAutoReply({
+      content: content.trim(),
+      isEnable: isEnable ?? true,
+      startTime: startTime ?? 0,
+      endTime: endTime ?? 0,
+      scope: scope as Parameters<typeof zaloApi.createAutoReply>[0]["scope"] ?? 0,
+      uids,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.delete("/api/auto-reply/:id", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.deleteAutoReply(Number(req.params.id));
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Last online status ===
+app.get("/api/users/:userId/last-online", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  try {
+    const result = await zaloApi.lastOnline(req.params.userId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
 app.post("/api/events/typing", async (req, res) => {
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   const { threadId, type } = req.body as { threadId: string; type: ThreadKind };
