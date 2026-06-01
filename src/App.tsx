@@ -340,6 +340,9 @@ function App() {
   const endRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const conversationsRef = useRef<Conversation[]>([])
+  // Threads whose history we've already force-refreshed this session, so we
+  // only hit Zalo for fresh history on the first open of each thread.
+  const refreshedThreadsRef = useRef<Set<string>>(new Set())
 
   // Category state
   const [categories, setCategories] = useState<Category[]>(loadCategories)
@@ -674,9 +677,14 @@ function App() {
     setShowAttachments(false)
     setMessageFilter('')
     setOpening(true)
-    reportClientEvent('conversation-open', { threadId: conversation.id, type: conversation.type, refresh })
+    // Force a server-side refresh the first time a thread is opened this session
+    // so we pull the latest history from Zalo, not just whatever's cached.
+    const firstOpen = !refreshedThreadsRef.current.has(conversation.id)
+    const shouldRefresh = refresh || firstOpen
+    refreshedThreadsRef.current.add(conversation.id)
+    reportClientEvent('conversation-open', { threadId: conversation.id, type: conversation.type, refresh: shouldRefresh, firstOpen })
     try {
-      const suffix = refresh ? '?refresh=1' : ''
+      const suffix = shouldRefresh ? '?refresh=1' : ''
       const data = await apiJson<ChatMessage[]>(`/api/messages/${conversation.type}/${conversation.id}${suffix}`)
       setMessages(Array.isArray(data) ? data : [])
       await apiJson('/api/events/seen', {

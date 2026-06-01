@@ -34,7 +34,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function runOnce(args: string[], options: SpawnOptionsWithoutStdio = {}): Promise<{
+async function runOnce(binary: string, args: string[], options: SpawnOptionsWithoutStdio = {}): Promise<{
   code: number | null;
   stdout: string;
   stderr: string;
@@ -42,7 +42,7 @@ async function runOnce(args: string[], options: SpawnOptionsWithoutStdio = {}): 
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {
-      child = spawn("cloudflared", args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, ...options });
+      child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, ...options });
     } catch (error) {
       reject(error);
       return;
@@ -58,6 +58,7 @@ async function runOnce(args: string[], options: SpawnOptionsWithoutStdio = {}): 
 
 export class TunnelManager extends EventEmitter {
   private child: ChildProcess | null = null;
+  private readonly resolveBinary: () => string;
   private status: TunnelStatus = {
     state: "stopped",
     mode: null,
@@ -66,6 +67,19 @@ export class TunnelManager extends EventEmitter {
     startedAt: 0,
     recentLogs: [],
   };
+
+  constructor(resolveBinary: () => string) {
+    super();
+    this.resolveBinary = resolveBinary;
+  }
+
+  private getBinary(): string {
+    const binary = this.resolveBinary();
+    if (!binary) {
+      throw new Error("cloudflared chưa cài. Vào tab Cloudflare Tunnel → bấm \"Tải cloudflared\" để cài tự động, hoặc cài thủ công từ github.com/cloudflare/cloudflared/releases.");
+    }
+    return binary;
+  }
 
   getStatus(): TunnelStatus {
     return { ...this.status, recentLogs: [...this.status.recentLogs] };
@@ -77,18 +91,15 @@ export class TunnelManager extends EventEmitter {
    */
   async startQuick(localPort: number): Promise<TunnelStatus> {
     if (this.child) return this.getStatus();
-    return this.spawnTunnel("quick", ["tunnel", "--url", `http://localhost:${localPort}`], URL_PATTERN);
+    let binary: string;
+    try { binary = this.getBinary(); } catch (error) {
+      this.status = { ...this.status, state: "error", error: errorMessage(error), mode: "quick" };
+      this.emit("status", this.getStatus());
+      return this.getStatus();
+    }
+    return this.spawnTunnel(binary, "quick", ["tunnel", "--url", `http://localhost:${localPort}`], URL_PATTERN);
   }
 
-  /**
-   * Start a named tunnel. Assumes the user has already run `authorize()`
-   * (i.e. `cloudflared tunnel login` has produced a cert.pem).
-   *
-   * Steps:
-   *   1. Ensure tunnel `tunnelName` exists (create if missing).
-   *   2. Route DNS `subdomain.domain` → tunnel.
-   *   3. Run the tunnel with `--url http://localhost:<port>`.
-   */
   async startNamed(localPort: number, tunnelName: string, subdomain: string, domain: string): Promise<TunnelStatus> {
     if (this.child) return this.getStatus();
     if (!tunnelName.trim() || !subdomain.trim() || !domain.trim()) {
@@ -96,21 +107,21 @@ export class TunnelManager extends EventEmitter {
       this.emit("status", this.getStatus());
       return this.getStatus();
     }
+    let binary: string;
+    try { binary = this.getBinary(); } catch (error) {
+      this.status = { ...this.status, state: "error", error: errorMessage(error), mode: "named" };
+      this.emit("status", this.getStatus());
+      return this.getStatus();
+    }
     const fqdn = `${subdomain}.${domain}`;
 
     // Step 1: create if missing.
     try {
-      const create = await runOnce(["tunnel", "create", tunnelName]);
+      const create = await runOnce(binary, ["tunnel", "create", tunnelName]);
       this.recordLog(`[create] ${(create.stdout || create.stderr).trim()}`);
-      if (create.code !== 0 && !/already exists/i.test(create.stderr + create.stdout)) {
-        // create can legitimately fail if it already exists; only bail on other failures
-        if (!/already exists/i.test(create.stderr + create.stdout)) {
-          this.recordLog(`[create] non-zero exit ${create.code}, continuing anyway`);
-        }
-      }
     } catch (error) {
       const msg = (error as NodeJS.ErrnoException).code === "ENOENT"
-        ? "cloudflared chưa được cài. Tải tại https://github.com/cloudflare/cloudflared/releases."
+        ? "cloudflared chưa cài đúng. Bấm 'Tải cloudflared' để tải lại."
         : errorMessage(error);
       this.status = { ...this.status, state: "error", error: msg, mode: "named" };
       this.emit("status", this.getStatus());
@@ -119,38 +130,35 @@ export class TunnelManager extends EventEmitter {
 
     // Step 2: route DNS.
     try {
-      const route = await runOnce(["tunnel", "route", "dns", tunnelName, fqdn]);
+      const route = await runOnce(binary, ["tunnel", "route", "dns", tunnelName, fqdn]);
       this.recordLog(`[route] ${(route.stdout || route.stderr).trim()}`);
     } catch (error) {
       this.recordLog(`[route] error: ${errorMessage(error)}`);
     }
 
-    // Step 3: run the tunnel.
-    return this.spawnTunnel("named", ["tunnel", "run", "--url", `http://localhost:${localPort}`, tunnelName], null, fqdn);
+    return this.spawnTunnel(binary, "named", ["tunnel", "run", "--url", `http://localhost:${localPort}`, tunnelName], null, fqdn);
   }
 
-  /**
-   * Run `cloudflared tunnel login` interactively. cloudflared prints a URL
-   * the user must visit in their browser to pick the domain/zone, then
-   * writes cert.pem to disk and exits.
-   *
-   * We surface the URL out of stderr/stdout so the admin UI can show it
-   * (or auto-open it).
-   */
   async authorize(): Promise<{ ok: boolean; url?: string; output: string; error?: string }> {
+    let binary: string;
+    try { binary = this.getBinary(); } catch (error) { return { ok: false, output: "", error: errorMessage(error) }; }
+
     return new Promise((resolve) => {
       let child: ChildProcess;
       try {
-        child = spawn("cloudflared", ["tunnel", "login"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+        child = spawn(binary, ["tunnel", "login"], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
       } catch (error) {
-        const msg = (error as NodeJS.ErrnoException).code === "ENOENT"
-          ? "cloudflared chưa được cài."
-          : errorMessage(error);
-        resolve({ ok: false, output: "", error: msg });
+        resolve({ ok: false, output: "", error: errorMessage(error) });
         return;
       }
       let combined = "";
       let foundUrl: string | undefined;
+      let settled = false;
+      const finish = (result: { ok: boolean; url?: string; output: string; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
       const consume = (chunk: Buffer) => {
         const text = chunk.toString("utf8");
         combined += text;
@@ -165,19 +173,19 @@ export class TunnelManager extends EventEmitter {
       };
       (child.stdout as Readable | null)?.on("data", consume);
       (child.stderr as Readable | null)?.on("data", consume);
-      child.on("error", (error) => {
-        resolve({ ok: false, output: combined, error: errorMessage(error) });
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        const msg = error.code === "ENOENT"
+          ? "cloudflared không chạy được. Bấm 'Tải cloudflared' để tải lại."
+          : errorMessage(error);
+        finish({ ok: false, output: combined, error: msg });
       });
       child.on("exit", (code) => {
-        resolve({ ok: code === 0, url: foundUrl, output: combined, error: code === 0 ? undefined : `exit ${code}` });
+        finish({ ok: code === 0, url: foundUrl, output: combined, error: code === 0 ? undefined : `exit ${code}` });
       });
     });
   }
 
   async listAuthorizedDomains(): Promise<string[]> {
-    // cloudflared doesn't expose a "list zones" command; rely on the user typing
-    // the domain. This stub returns [] so the UI hides the picker, but we keep
-    // the method around for future enhancement (e.g. parsing ~/.cloudflared/cert.pem).
     return [];
   }
 
@@ -206,7 +214,7 @@ export class TunnelManager extends EventEmitter {
 
   // ===== internal =====
 
-  private spawnTunnel(mode: TunnelMode, args: string[], urlPattern: RegExp | null, knownPublicUrl?: string): TunnelStatus {
+  private spawnTunnel(binary: string, mode: TunnelMode, args: string[], urlPattern: RegExp | null, knownPublicUrl?: string): TunnelStatus {
     this.status = {
       state: "starting",
       mode,
@@ -219,7 +227,7 @@ export class TunnelManager extends EventEmitter {
 
     let child: ChildProcess;
     try {
-      child = spawn("cloudflared", args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     } catch (error) {
       this.status.state = "error";
       this.status.error = errorMessage(error);
@@ -231,13 +239,12 @@ export class TunnelManager extends EventEmitter {
     child.on("error", (error: NodeJS.ErrnoException) => {
       this.status.state = "error";
       this.status.error = error.code === "ENOENT"
-        ? "cloudflared chưa được cài. Tải tại https://github.com/cloudflare/cloudflared/releases và đảm bảo có trong PATH."
+        ? "cloudflared chưa được cài. Vào tab Cloudflare Tunnel để tải tự động."
         : errorMessage(error);
       this.recordLog(`[error] ${this.status.error}`);
       this.emit("status", this.getStatus());
     });
 
-    let connectionsReady = 0;
     const consume = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       for (const line of text.split(/\r?\n/)) {
@@ -252,9 +259,7 @@ export class TunnelManager extends EventEmitter {
             this.emit("status", this.getStatus());
           }
         }
-        // Named tunnel: state becomes running when at least one connection is registered.
         if (mode === "named" && /Registered tunnel connection/i.test(line)) {
-          connectionsReady += 1;
           if (this.status.state !== "running") {
             this.status.state = "running";
             this.status.error = "";
@@ -262,7 +267,6 @@ export class TunnelManager extends EventEmitter {
           }
         }
       }
-      void connectionsReady;
     };
     (child.stdout as Readable | null)?.on("data", consume);
     (child.stderr as Readable | null)?.on("data", consume);
@@ -292,3 +296,4 @@ export class TunnelManager extends EventEmitter {
     this.emit("status", this.getStatus());
   }
 }
+

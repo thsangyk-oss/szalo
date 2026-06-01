@@ -296,6 +296,20 @@
         <div class="card">
           <div class="row" id="tunnelStateRow" style="margin-bottom: 14px;"></div>
 
+          <!-- cloudflared binary status -->
+          <div id="cfBinaryBox" style="padding: 12px 14px; background: var(--panel-2); border-radius: 9px; margin-bottom: 14px;">
+            <div class="row" style="justify-content: space-between;">
+              <div id="cfBinaryState" class="row"></div>
+              <button id="cfInstallBtn" type="button" class="primary small">⬇ Tải cloudflared</button>
+            </div>
+            <div id="cfProgressWrap" class="hidden" style="margin-top: 10px;">
+              <div style="height: 8px; background: var(--bg); border-radius: 999px; overflow: hidden;">
+                <div id="cfProgressBar" style="height: 100%; width: 0%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); transition: width 0.2s;"></div>
+              </div>
+              <small id="cfProgressText" style="color: var(--muted);"></small>
+            </div>
+          </div>
+
           <div class="tabs">
             <button id="modeQuick" class="active" type="button">Quick Tunnel</button>
             <button id="modeNamed" type="button">Named Tunnel (domain riêng)</button>
@@ -728,7 +742,12 @@
       feed.innerHTML = filtered.slice().reverse().map((event) => {
         const target = event.threadId ? `<span class="target">→ ${escapeHtml(event.threadId)}</span>` : "";
         const detail = event.detail
-          ? Object.entries(event.detail).filter(([k, v]) => v !== undefined && v !== "" && k !== "ip" && k !== "socketId").map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(" ")
+          ? Object.entries(event.detail)
+              // Hide noise: ip / socketId aren't useful inline, and false-valued
+              // booleans (admin=false on every desktop connect, refresh=false on
+              // every normal thread-open) don't add information.
+              .filter(([k, v]) => v !== undefined && v !== "" && v !== false && k !== "ip" && k !== "socketId")
+              .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(" ")
           : "";
         return `<div class="activityRow">
           <span class="ts">${fmtTime(event.ts)}</span>
@@ -853,6 +872,44 @@
         if (!cfs.dataset.dirty) cfs.value = status.config.subdomain || "";
         updatePreview();
       }
+      if (status.cloudflared) renderCloudflared(status.cloudflared);
+    }
+
+    function renderCloudflared(cf) {
+      const stateEl = $("#cfBinaryState");
+      const installBtn = $("#cfInstallBtn");
+      const progWrap = $("#cfProgressWrap");
+      const progBar = $("#cfProgressBar");
+      const progText = $("#cfProgressText");
+
+      if (cf.downloading) {
+        const pct = cf.progress ?? 0;
+        stateEl.innerHTML = `<span class="pill warn">Đang tải cloudflared...</span>`;
+        installBtn.disabled = true;
+        installBtn.textContent = "⬇ Đang tải...";
+        progWrap.classList.remove("hidden");
+        progBar.style.width = `${pct}%`;
+        const mb = (n) => (n ? (n / 1048576).toFixed(1) + " MB" : "");
+        progText.textContent = cf.totalBytes
+          ? `${pct}% — ${mb(cf.downloadedBytes)} / ${mb(cf.totalBytes)}`
+          : `Đã tải ${mb(cf.downloadedBytes)}`;
+        return;
+      }
+
+      progWrap.classList.add("hidden");
+      installBtn.disabled = false;
+
+      if (cf.installed) {
+        const srcLabel = cf.source === "path" ? "trong PATH" : cf.source === "local" ? "đã tải về" : cf.source;
+        stateEl.innerHTML = `<span class="pill ok">✔ cloudflared sẵn sàng</span>` +
+          (cf.version ? `<span class="pill muted">v${escapeHtml(cf.version)}</span>` : "") +
+          `<span class="pill muted">${srcLabel}</span>`;
+        installBtn.textContent = "↻ Tải lại";
+      } else {
+        stateEl.innerHTML = `<span class="pill err">✘ Chưa có cloudflared</span>` +
+          (cf.error ? `<span class="pill warn">${escapeHtml(cf.error)}</span>` : "");
+        installBtn.textContent = "⬇ Tải cloudflared";
+      }
     }
 
     function updatePreview() {
@@ -909,6 +966,23 @@
       }
     });
 
+    // cloudflared install (auto-download)
+    $("#cfInstallBtn").addEventListener("click", async () => {
+      $("#cfInstallBtn").disabled = true;
+      toast("Đang tải cloudflared...");
+      try {
+        const status = await adminJSON("/api/admin/cloudflared/install", { method: "POST" });
+        renderCloudflared(status);
+        toast(status.installed ? "Đã cài cloudflared" : (status.error || "Tải thất bại"));
+        // Refresh tunnel state to clear any "chưa cài" error.
+        adminJSON("/api/admin/tunnel/status").then(renderTunnel).catch(() => undefined);
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        $("#cfInstallBtn").disabled = false;
+      }
+    });
+
     // ========= password change =========
     function checkPasswordsMatch() {
       const newPwd = $("#newPwd").value;
@@ -954,6 +1028,7 @@
       socket = io({ transports: ["websocket"], auth: { apiKey: firstApiKey, admin: true } });
       socket.on("status", renderZaloLogin);
       socket.on("tunnel_status", renderTunnel);
+      socket.on("cloudflared_status", renderCloudflared);
       socket.on("connections", renderConnections);
       socket.on("activity", (event) => {
         activityCache.push(event);

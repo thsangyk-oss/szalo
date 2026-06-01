@@ -14,6 +14,7 @@ import { TunnelManager } from "./tunnel";
 import { Database } from "./db";
 import { AdminSessions } from "./admin";
 import { ActivityLog, type ActivityEvent } from "./activity";
+import { CloudflaredManager } from "./cloudflared";
 import {
   AvatarSize,
   LoginQRCallbackEventType,
@@ -68,6 +69,7 @@ const SESSION_FILE = path.join(DATA_DIR, "session.json");
 const db = new Database(DB_FILE);
 const adminSessions = new AdminSessions();
 const activity = new ActivityLog(ACTIVITY_FILE);
+const cloudflared = new CloudflaredManager(DATA_DIR);
 
 // Live connections — each entry is one connected client.
 type LiveConnection = {
@@ -339,9 +341,12 @@ app.get(["/admin", "/admin/"], (_req, res) => {
 // Convenience redirect for users hitting the bare server URL in a browser.
 app.get("/", (_req, res) => res.redirect(302, "/admin"));
 
-const tunnel = new TunnelManager();
+const tunnel = new TunnelManager(() => cloudflared.resolve());
 tunnel.on("status", (status) => {
   io.emit("tunnel_status", status);
+});
+cloudflared.on("status", (status) => {
+  io.to("admins").emit("cloudflared_status", status);
 });
 
 app.use((req, res, next) => {
@@ -1023,9 +1028,18 @@ app.get("/api/admin/activity", (req, res) => {
   res.json(activity.list({ keyId, limit, since }));
 });
 
+// === Cloudflared binary management ===
+app.get("/api/admin/cloudflared/status", (_req, res) => {
+  res.json(cloudflared.status());
+});
+app.post("/api/admin/cloudflared/install", async (_req, res) => {
+  const status = await cloudflared.install();
+  res.json(status);
+});
+
 // === Cloudflare tunnel admin ===
 app.get("/api/admin/tunnel/status", (_req, res) => {
-  res.json({ ...tunnel.getStatus(), config: db.getCloudflareConfig() });
+  res.json({ ...tunnel.getStatus(), config: db.getCloudflareConfig(), cloudflared: cloudflared.status() });
 });
 app.post("/api/admin/tunnel/quick", async (_req, res) => {
   const status = await tunnel.startQuick(PORT);
@@ -1619,6 +1633,7 @@ io.on("connection", (socket) => {
   const keyName = data.keyName ?? "";
   const ip = (socket.handshake.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
     ?? socket.handshake.address ?? "";
+  const isAdmin = socket.handshake.auth?.admin === true || socket.handshake.auth?.admin === "true";
 
   liveConnections.set(socket.id, {
     socketId: socket.id,
@@ -1628,7 +1643,7 @@ io.on("connection", (socket) => {
     connectedAt: Date.now(),
   });
   io.to("admins").emit("connections", Array.from(liveConnections.values()));
-  activity.record({ ts: Date.now(), keyId, keyName, action: "connect", detail: { ip, socketId: socket.id } });
+  activity.record({ ts: Date.now(), keyId, keyName, action: "connect", detail: { ip, socketId: socket.id, admin: isAdmin } });
 
   socket.on("disconnect", (reason) => {
     liveConnections.delete(socket.id);
@@ -1636,21 +1651,18 @@ io.on("connection", (socket) => {
     activity.record({ ts: Date.now(), keyId, keyName, action: "disconnect", detail: { reason } });
   });
 
-  socket.emit("status", { state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
-  socket.emit("conversations", sortedConversations());
-  socket.emit("tunnel_status", tunnel.getStatus());
-});
-
-// Admin sockets join a private room for live updates (connections + activity).
-// They authenticate via the same API key (admin UI fetches it from /api/admin/me)
-// AND must include `auth.admin: true` to opt into admin events.
-io.on("connection", (socket) => {
-  const auth = socket.handshake.auth ?? {};
-  if (auth.admin === true || auth.admin === "true") {
+  // Admin-flagged sockets join the "admins" room for live admin events
+  // (connections list + activity feed). They use the same API key — admin
+  // is just an opt-in flag in the handshake.
+  if (isAdmin) {
     socket.join("admins");
     socket.emit("connections", Array.from(liveConnections.values()));
     socket.emit("activity_history", activity.list({ limit: 200 }));
   }
+
+  socket.emit("status", { state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
+  socket.emit("conversations", sortedConversations());
+  socket.emit("tunnel_status", tunnel.getStatus());
 });
 
 // Push every new activity event to admins in real time.
