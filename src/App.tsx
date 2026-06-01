@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
+import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
@@ -12,6 +12,7 @@ import FindUser from './FindUser'
 import MentionPicker, { type GroupMember } from './MentionPicker'
 import GroupMembersModal from './GroupMembersModal'
 import StickerPicker from './StickerPicker'
+import RemindersPanel from './RemindersPanel'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -350,6 +351,7 @@ function App() {
   const [showQuickReply, setShowQuickReply] = useState(false)
   const [showAllMembers, setShowAllMembers] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
+  const [showReminders, setShowReminders] = useState(false)
   // @mention picker state for group composer
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
   // Collected mentions {pos, uid, len} for the current draft, sent with the message
@@ -1505,6 +1507,9 @@ function App() {
                   <button className={selected.muted ? 'iconButton active' : 'iconButton'} onClick={() => conversationAction(selected.muted ? 'unmute' : 'mute')} title={selected.muted ? 'Bật thông báo' : 'Tắt thông báo'}>
                     {selected.muted ? <BellOff size={16} /> : <Bell size={16} />}
                   </button>
+                  <button className="iconButton" onClick={() => setShowReminders(true)} title="Reminder / Follow-up">
+                    <Calendar size={16} />
+                  </button>
                   <button className="iconButton" onClick={() => conversationAction(selected.unread > 0 ? 'mark_read' : 'mark_unread')} title={selected.unread > 0 ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}>
                     <CheckCheck size={16} />
                   </button>
@@ -1799,6 +1804,13 @@ function App() {
             openConversation(target as Conversation)
           }}
           onClose={() => setShowAllMembers(false)}
+        />
+      )}
+      {showReminders && selected && (
+        <RemindersPanel
+          threadId={selected.id}
+          threadType={selected.type}
+          onClose={() => setShowReminders(false)}
         />
       )}
       {showChannelPicker && selectedCategory && (() => {

@@ -1941,6 +1941,63 @@ app.delete("/api/auto-reply/:id", async (req, res) => {
   }
 });
 
+// === Reminders / follow-ups (per-thread) ===
+
+app.get("/api/reminders/:type/:threadId", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { type, threadId } = req.params as { type: ThreadKind; threadId: string };
+  if (!isThreadKind(type)) {
+    res.status(400).json({ error: "Invalid thread type" });
+    return;
+  }
+  const page = Number(req.query.page) || 1;
+  const count = Number(req.query.count) || 50;
+  try {
+    const result = await zaloApi.getListReminder({ page, count }, threadId, asThreadType(type));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.post("/api/reminders", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, title, emoji, startTime, repeat } = req.body as {
+    threadId?: string; type?: unknown; title?: string;
+    emoji?: string; startTime?: number; repeat?: number;
+  };
+  if (!threadId || !isThreadKind(type) || !title?.trim()) {
+    res.status(400).json({ error: "Cần threadId, type, title" });
+    return;
+  }
+  try {
+    const result = await zaloApi.createReminder({
+      title: title.trim(),
+      emoji: emoji || "📅",
+      startTime: startTime || Date.now(),
+      repeat: (repeat ?? 0) as Parameters<typeof zaloApi.createReminder>[0]["repeat"],
+    }, threadId, asThreadType(type));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+app.delete("/api/reminders/:type/:threadId/:id", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { type, threadId, id } = req.params as { type: ThreadKind; threadId: string; id: string };
+  if (!isThreadKind(type)) {
+    res.status(400).json({ error: "Invalid thread type" });
+    return;
+  }
+  try {
+    const result = await zaloApi.removeReminder(id, threadId, asThreadType(type));
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
 // === Last online status ===
 app.get("/api/users/:userId/last-online", async (req, res) => {
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
