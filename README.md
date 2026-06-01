@@ -34,13 +34,15 @@ On first boot the server creates `db.json` (under `DATA_DIR`, default `.zalo-man
 - A freshly generated **API key** (32 random bytes, hex)
 - The default **admin password** `123456` (scrypt-hashed)
 
-Open `http://localhost:13113/admin` and log in with `123456`. From there:
+Open `http://localhost:13113/admin` and log in with `123456`. The admin panel has 5 tabs:
 
-- See and copy the API key for desktop clients
-- Rotate the API key (disconnects all current clients)
-- Change the admin password (the banner nags you until you change it from `123456`)
-- Generate a Zalo QR and log the server into your fixed Zalo account
-- Start / stop a Cloudflare Quick Tunnel (`*.trycloudflare.com`) — requires [`cloudflared`](https://github.com/cloudflare/cloudflared/releases) on `PATH`
+- **📊 Dashboard** — server URL, public URL (if tunnel running), Zalo QR login, conversation counts.
+- **🔑 API Keys** — one row per client. Create / rename / disable / revoke keys independently. Each desktop machine gets its own named key so you can audit and revoke selectively.
+- **👁 Connection Watch** — live list of who's connected (key name + IP + when), plus a real-time activity feed of every `connect / open chat / send message / Zalo login` action. History persists to `activity.json` (capped at 5,000 events).
+- **🌐 Cloudflare Tunnel** — two modes:
+    - **Quick** — one-click `*.trycloudflare.com` URL (no account needed).
+    - **Named** — bind to your own domain. Click *Authorize* (runs `cloudflared tunnel login`, opens a Cloudflare page to pick the zone), then enter tunnel name + domain + subdomain. Server creates the tunnel, routes DNS, and runs it.
+- **🔒 Tài khoản admin** — change password (3 fields: current + new + confirm).
 
 `.env` keys (all optional — server runs without an `.env` at all):
 
@@ -51,17 +53,17 @@ Open `http://localhost:13113/admin` and log in with `123456`. From there:
 | `DATA_DIR` | `./.zalo-manager` | Where session, cache, uploads, and `db.json` live. |
 | `DB_FILE` | `<DATA_DIR>/db.json` | Override the JSON store path. |
 
-The session, conversations cache, uploads, and `db.json` are persisted under `DATA_DIR`. Logging in once survives restarts; deleting `db.json` regenerates the API key and resets the admin password to `123456`.
+The session, conversations cache, uploads, `db.json`, and `activity.json` are persisted under `DATA_DIR`. Logging in once survives restarts; deleting `db.json` regenerates the API keys and resets the admin password to `123456`.
 
 ### Auth model — two distinct credentials
 
 | Endpoint group | Required credential | How |
 | --- | --- | --- |
 | `/api/health/ping`, `/admin`, `/api/admin/login` | none (public) | — |
-| `/api/admin/*` (key view/rotate, password, tunnel) | **admin session token** | header `x-admin-token: <token>` (issued by `POST /api/admin/login`) |
+| `/api/admin/*` (manage keys / password / tunnel / activity) | **admin session token** | header `x-admin-token: <token>` (issued by `POST /api/admin/login`) |
 | All other `/api/*` + Socket.IO | **API key** | `x-api-key: <key>` header / `Authorization: Bearer <key>` / `?api_key=<key>` |
 
-The two are kept separate so the desktop client (which only has the API key) can't reach admin operations.
+The two are kept separate so a leaked desktop key can't manage the server. Disabled keys are rejected with HTTP 403, and disabling or revoking a key immediately drops any active socket using it.
 
 Socket.IO connections pass the API key as `auth.apiKey` in the handshake.
 

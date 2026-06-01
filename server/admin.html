@@ -21,14 +21,39 @@
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); padding: 32px 24px 80px; }
-    h1 { margin: 0 0 6px; font-size: 1.7rem; display: flex; align-items: center; gap: 10px; }
-    h2 { margin: 0 0 12px; font-size: 1.05rem; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    p.lead { margin: 0 0 24px; color: var(--muted); }
-    main { max-width: 920px; margin: 0 auto; display: grid; gap: 18px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.05rem; margin-bottom: 12px; }
+    p.lead { margin: 0 0 16px; color: var(--muted); font-size: 0.9rem; }
+    code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; font-size: 0.85em; word-break: break-all; }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+
+    /* === Layout === */
+    .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
+    .sidebar {
+      background: var(--panel); border-right: 1px solid var(--border);
+      padding: 24px 14px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .sidebar h1 { padding: 0 8px 16px; font-size: 1.1rem; }
+    .sideBtn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 9px; cursor: pointer;
+      background: transparent; border: none; color: var(--muted); font: inherit;
+      text-align: left; width: 100%;
+    }
+    .sideBtn:hover { background: var(--panel-2); color: var(--text); }
+    .sideBtn.active { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .sideBtn .badge { margin-left: auto; background: var(--accent); color: white; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; }
+    .sideSpacer { flex: 1; }
+    .content { padding: 28px 32px 64px; max-width: 1024px; }
+
+    /* === Cards / inputs / buttons === */
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .row > * { min-width: 0; }
+    .stack { display: flex; flex-direction: column; gap: 14px; }
     .grid2 { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     @media (max-width: 720px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
     label { display: block; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
@@ -42,16 +67,19 @@
       border-radius: 9px; padding: 8px 14px; cursor: pointer; font: inherit;
       display: inline-flex; align-items: center; gap: 6px;
     }
+    button:hover { border-color: #353a50; }
     button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; }
     button.danger { background: rgba(255, 77, 106, 0.15); border-color: rgba(255, 77, 106, 0.4); color: #fca5a5; }
+    button.ghost { background: transparent; }
+    button.small { padding: 4px 9px; font-size: 0.8rem; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; border: 1px solid transparent; }
+
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; border: 1px solid transparent; white-space: nowrap; }
     .pill.ok { background: rgba(52, 211, 153, 0.1); color: #86efac; border-color: rgba(52, 211, 153, 0.3); }
     .pill.warn { background: rgba(251, 191, 36, 0.1); color: #fcd34d; border-color: rgba(251, 191, 36, 0.3); }
     .pill.err { background: rgba(255, 77, 106, 0.1); color: #fca5a5; border-color: rgba(255, 77, 106, 0.3); }
     .pill.muted { background: var(--panel-2); color: var(--muted); border-color: var(--border); }
-    code { background: var(--panel-2); padding: 2px 6px; border-radius: 5px; font-size: 0.85em; word-break: break-all; }
-    .stack { display: flex; flex-direction: column; gap: 14px; }
+
     .urlBox { display: flex; gap: 8px; align-items: stretch; }
     .urlBox input { font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, monospace; }
     .qr { background: white; padding: 8px; border-radius: 12px; display: inline-block; }
@@ -64,6 +92,35 @@
       font-size: 0.75rem; color: var(--muted); white-space: pre-wrap;
     }
     .keyHint { font-size: 0.78rem; color: var(--muted); margin-top: 8px; }
+    .banner {
+      padding: 10px 14px; border-radius: 9px; background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.3); color: #fcd34d; font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+
+    /* === Tables === */
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: none; }
+    .keyCell { font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--muted); }
+    .actionsCell { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+    /* === Tabs (tunnel) === */
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+    .tabs button {
+      background: transparent; border: none; padding: 8px 14px; cursor: pointer; color: var(--muted);
+      border-bottom: 2px solid transparent; border-radius: 0;
+    }
+    .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+    /* === Modal === */
+    .modalBackdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; z-index: 60;
+    }
+    .modal { width: min(440px, calc(100vw - 32px)); }
+
+    /* === Toast === */
     .toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
       background: var(--panel); border: 1px solid var(--border); padding: 10px 16px;
@@ -72,23 +129,26 @@
       z-index: 999;
     }
     .toast.show { opacity: 1; }
-    .login {
-      position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 50;
-    }
-    .loginCard { width: min(380px, calc(100vw - 32px)); }
+
+    /* === Login overlay === */
+    .login { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 50; }
+    .loginCard { width: min(380px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 28px; }
     .loginCard input { font-size: 1rem; padding: 12px 14px; }
-    .banner {
-      padding: 10px 14px; border-radius: 9px; background: rgba(251, 191, 36, 0.1);
-      border: 1px solid rgba(251, 191, 36, 0.3); color: #fcd34d; font-size: 0.85rem;
-      margin-bottom: 16px;
+
+    .activityFeed {
+      max-height: 480px; overflow: auto; font-size: 0.83rem;
     }
-    .hidden { display: none !important; }
+    .activityRow { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: baseline; }
+    .activityRow:last-child { border-bottom: none; }
+    .activityRow .ts { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; min-width: 70px; }
+    .activityRow .actorName { font-weight: 500; }
+    .activityRow .target { color: var(--muted); font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
   <!-- Login overlay -->
   <div id="loginOverlay" class="login">
-    <div class="card loginCard stack">
+    <div class="loginCard stack">
       <h1 style="margin: 0 0 4px;">🛰️ Szalo Server</h1>
       <p class="lead" style="margin: 0;">Đăng nhập admin để quản lý server.</p>
       <div>
@@ -97,132 +157,299 @@
       </div>
       <div id="loginError" class="error" style="display: none;"></div>
       <button id="loginBtn" type="button" class="primary" style="justify-content: center;">Đăng nhập</button>
-      <p class="keyHint">Đăng nhập lần đầu dùng mật khẩu mặc định <code>123456</code> rồi đổi ngay trong phần "Mật khẩu admin".</p>
+      <p class="keyHint">Đăng nhập lần đầu dùng mật khẩu mặc định <code>123456</code> rồi đổi ngay trong tab "Tài khoản".</p>
     </div>
   </div>
 
-  <main id="adminBody" class="hidden">
-    <header>
-      <h1>
-        <span>🛰️ Szalo Server</span>
-        <span style="margin-left: auto; display: flex; gap: 8px; font-size: 0.85rem;">
-          <button id="logoutBtn" type="button" class="danger" title="Đăng xuất admin">⎋ Đăng xuất</button>
-        </span>
-      </h1>
-      <p class="lead">Bridge Zalo cố định cho desktop client. Cấp API key, quản lý đăng nhập Zalo, và xuất public URL qua Cloudflare Tunnel.</p>
-    </header>
+  <div id="adminBody" class="hidden layout">
+    <aside class="sidebar">
+      <h1>🛰️ Szalo Server</h1>
+      <button class="sideBtn" data-tab="dashboard">📊 Dashboard</button>
+      <button class="sideBtn" data-tab="keys">🔑 API Keys <span id="keyCount" class="pill muted small"></span></button>
+      <button class="sideBtn" data-tab="watch">👁 Connection Watch <span id="liveCount" class="badge hidden"></span></button>
+      <button class="sideBtn" data-tab="tunnel">🌐 Cloudflare Tunnel</button>
+      <button class="sideBtn" data-tab="account">🔒 Tài khoản admin</button>
+      <div class="sideSpacer"></div>
+      <button class="sideBtn danger" id="logoutBtn">⎋ Đăng xuất</button>
+    </aside>
 
-    <div id="passwordBanner" class="banner hidden">
-      ⚠ Bạn đang dùng mật khẩu mặc định <code>123456</code>. Hãy đổi mật khẩu ngay.
-    </div>
+    <main class="content">
+      <div id="passwordBanner" class="banner hidden">
+        ⚠ Bạn đang dùng mật khẩu mặc định <code>123456</code>. Hãy đổi mật khẩu trong tab "Tài khoản admin".
+      </div>
 
-    <div class="grid2">
-      <section class="card">
-        <h2>🔑 API key cho client</h2>
-        <p class="keyHint" style="margin-top: 0;">Dán key này vào màn hình "Cài đặt server" của desktop app. Server tự sinh khóa — không cần cấu hình tay.</p>
-        <div class="urlBox">
-          <input id="apiKey" type="password" readonly />
-          <button id="apiKeyShow" type="button" title="Hiện/ẩn">👁</button>
-          <button data-copy="#apiKey" type="button">Copy</button>
+      <!-- ========= Dashboard ========= -->
+      <section data-pane="dashboard" class="hidden">
+        <h1 style="margin-bottom: 6px;">📊 Dashboard</h1>
+        <p class="lead">Tổng quan trạng thái server và đăng nhập Zalo cố định.</p>
+
+        <div class="grid2">
+          <div class="card">
+            <h2>📡 Server URL</h2>
+            <div class="stack">
+              <div>
+                <label>Local (LAN)</label>
+                <div class="urlBox">
+                  <input id="localUrl" type="text" readonly />
+                  <button data-copy="#localUrl" type="button">Copy</button>
+                </div>
+              </div>
+              <div>
+                <label>Public (Cloudflare Tunnel)</label>
+                <div class="urlBox">
+                  <input id="publicUrl" type="text" readonly placeholder="Chưa khởi tạo tunnel" />
+                  <button data-copy="#publicUrl" type="button">Copy</button>
+                </div>
+                <div id="dashTunnelState" class="row" style="margin-top: 8px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>📱 Đăng nhập Zalo</h2>
+            <div class="stack">
+              <div id="loginStatus" class="row"></div>
+              <div id="loginBody"><div class="empty">Đang tải trạng thái...</div></div>
+              <div class="row">
+                <button id="zaloStart" type="button" class="primary">Tạo QR đăng nhập</button>
+                <button id="zaloLogout" type="button" class="danger">Đăng xuất Zalo</button>
+                <button id="zaloRefresh" type="button">↻</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="row" style="margin-top: 12px;">
-          <button id="apiKeyRotate" type="button" class="danger">↻ Tạo key mới</button>
-          <small style="color: var(--muted);">Tạo key mới sẽ ngắt mọi client đang kết nối.</small>
+
+        <div class="card">
+          <h2>📈 Thống kê</h2>
+          <div id="counts" class="row" style="gap: 18px;"></div>
         </div>
       </section>
 
-      <section class="card">
-        <h2>📡 Server URL</h2>
-        <div class="stack">
-          <div>
-            <label>Local (LAN)</label>
-            <div class="urlBox">
-              <input id="localUrl" type="text" readonly />
-              <button data-copy="#localUrl" type="button">Copy</button>
+      <!-- ========= API Keys ========= -->
+      <section data-pane="keys" class="hidden">
+        <h1 style="margin-bottom: 6px;">🔑 API Keys</h1>
+        <p class="lead">Mỗi máy nhân viên dùng một API key riêng. Có thể đặt tên, vô hiệu, hoặc xóa từng key độc lập.</p>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; margin-bottom: 14px;">
+            <strong>Danh sách API key</strong>
+            <button id="newKeyBtn" type="button" class="primary">+ Tạo key mới</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Tên</th>
+                <th>Key</th>
+                <th>Trạng thái</th>
+                <th>Hoạt động cuối</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="keysTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========= Connection Watch ========= -->
+      <section data-pane="watch" class="hidden">
+        <h1 style="margin-bottom: 6px;">👁 Connection Watch</h1>
+        <p class="lead">Ai đang kết nối server, và lịch sử mỗi key đã làm gì (mở chat, gửi tin).</p>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+            <strong id="liveTitle">Đang online (0)</strong>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>IP</th>
+                <th>Kết nối lúc</th>
+              </tr>
+            </thead>
+            <tbody id="liveTbody"></tbody>
+          </table>
+          <div id="liveEmpty" class="empty hidden">Chưa có client nào đang kết nối.</div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+            <strong>Lịch sử hoạt động</strong>
+            <div class="row">
+              <select id="activityFilter" style="min-width: 180px;">
+                <option value="">Tất cả keys</option>
+              </select>
+              <button id="activityRefresh" class="small" type="button">↻</button>
             </div>
           </div>
-          <div>
-            <label>Public (Cloudflare Tunnel)</label>
-            <div class="urlBox">
-              <input id="publicUrl" type="text" readonly placeholder="Chưa khởi tạo tunnel" />
-              <button data-copy="#publicUrl" type="button">Copy</button>
+          <div id="activityFeed" class="activityFeed">
+            <div class="empty">Đang tải...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========= Tunnel ========= -->
+      <section data-pane="tunnel" class="hidden">
+        <h1 style="margin-bottom: 6px;">🌐 Cloudflare Tunnel</h1>
+        <p class="lead">Đẩy server ra public internet qua Cloudflare. Cần cài <code>cloudflared</code> và có trong <code>PATH</code>.</p>
+
+        <div class="card">
+          <div class="row" id="tunnelStateRow" style="margin-bottom: 14px;"></div>
+
+          <div class="tabs">
+            <button id="modeQuick" class="active" type="button">Quick Tunnel</button>
+            <button id="modeNamed" type="button">Named Tunnel (domain riêng)</button>
+          </div>
+
+          <div id="paneQuick" class="stack">
+            <p class="keyHint" style="margin-top: 0;">Quick Tunnel sinh subdomain ngẫu nhiên <code>*.trycloudflare.com</code>, miễn phí, không cần tài khoản Cloudflare. URL đổi mỗi lần khởi động.</p>
+            <div class="row">
+              <button id="quickStart" type="button" class="primary">▶ Khởi tạo Quick Tunnel</button>
+              <button id="quickStop" type="button" class="danger">■ Dừng tunnel</button>
             </div>
-            <div id="tunnelStatus" style="margin-top: 10px;" class="row"></div>
           </div>
-          <div class="row">
-            <button id="tunnelStart" type="button" class="primary">▶ Khởi tạo tunnel</button>
-            <button id="tunnelStop" type="button" class="danger">■ Dừng tunnel</button>
-            <button id="tunnelRefresh" type="button">↻</button>
+
+          <div id="paneNamed" class="stack hidden">
+            <p class="keyHint" style="margin-top: 0;">Named Tunnel cho phép gắn subdomain trên domain riêng (ví dụ <code>szalo.example.com</code>). Cần authorize cloudflared một lần với Cloudflare account đã add domain.</p>
+
+            <div class="row">
+              <button id="authorizeBtn" type="button">🔓 Authorize cloudflared</button>
+              <small style="color: var(--muted);">Chạy <code>cloudflared tunnel login</code> — mở trang Cloudflare để chọn domain.</small>
+            </div>
+            <div id="authorizeUrl" class="hidden" style="padding: 10px; background: var(--panel-2); border-radius: 9px; font-size: 0.85rem;">
+              Mở URL này trong trình duyệt để hoàn tất:
+              <a id="authorizeUrlLink" href="#" target="_blank" rel="noreferrer"></a>
+            </div>
+
+            <div class="grid2">
+              <div>
+                <label for="cfTunnelName">Tunnel name</label>
+                <input id="cfTunnelName" type="text" placeholder="szalo" />
+                <small style="color: var(--muted); font-size: 0.75rem;">Định danh tunnel trên Cloudflare. Nếu chưa có, server tự tạo.</small>
+              </div>
+              <div>
+                <label for="cfDomain">Domain (zone)</label>
+                <input id="cfDomain" type="text" placeholder="example.com" />
+                <small style="color: var(--muted); font-size: 0.75rem;">Domain bạn đã add vào tài khoản Cloudflare.</small>
+              </div>
+            </div>
+            <div>
+              <label for="cfSubdomain">Subdomain</label>
+              <input id="cfSubdomain" type="text" placeholder="szalo" />
+              <small style="color: var(--muted); font-size: 0.75rem;">Public URL sẽ là <code id="cfPreview">subdomain.domain</code></small>
+            </div>
+            <div class="row">
+              <button id="namedStart" type="button" class="primary">▶ Khởi tạo Named Tunnel</button>
+              <button id="namedStop" type="button" class="danger">■ Dừng tunnel</button>
+            </div>
           </div>
-          <details>
+
+          <details style="margin-top: 14px;">
             <summary style="cursor: pointer; color: var(--muted); font-size: 0.85rem;">Log cloudflared</summary>
             <pre id="tunnelLogs" class="logs">Chưa có log</pre>
           </details>
-          <p class="keyHint">
-            Cần cài <code>cloudflared</code>: tải tại
-            <a href="https://github.com/cloudflare/cloudflared/releases" target="_blank" style="color: var(--accent);">github.com/cloudflare/cloudflared</a>
-            và đảm bảo lệnh có trong PATH. Quick Tunnel sinh subdomain <code>*.trycloudflare.com</code> miễn phí, không cần tài khoản Cloudflare.
-          </p>
         </div>
       </section>
+
+      <!-- ========= Account ========= -->
+      <section data-pane="account" class="hidden">
+        <h1 style="margin-bottom: 6px;">🔒 Tài khoản admin</h1>
+        <p class="lead">Đổi mật khẩu admin. Mật khẩu mới phải nhập 2 lần để xác nhận.</p>
+
+        <div class="card stack">
+          <div>
+            <label for="curPwd">Mật khẩu hiện tại</label>
+            <input id="curPwd" type="password" autocomplete="current-password" />
+          </div>
+          <div>
+            <label for="newPwd">Mật khẩu mới (≥ 4 ký tự)</label>
+            <input id="newPwd" type="password" autocomplete="new-password" />
+          </div>
+          <div>
+            <label for="confirmPwd">Nhập lại mật khẩu mới</label>
+            <input id="confirmPwd" type="password" autocomplete="new-password" />
+          </div>
+          <div id="pwdMismatch" class="error hidden">Hai ô nhập lại không khớp.</div>
+          <div class="row">
+            <button id="changePwdBtn" type="button" class="primary">Đổi mật khẩu</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ========= Modal: new API key ========= -->
+  <div id="newKeyModal" class="modalBackdrop hidden">
+    <div class="card modal stack">
+      <h2>Tạo API key mới</h2>
+      <div>
+        <label for="newKeyName">Tên (ví dụ: máy nhân viên A, máy demo)</label>
+        <input id="newKeyName" type="text" placeholder="máy nhân viên A" />
+      </div>
+      <div class="row" style="justify-content: flex-end;">
+        <button id="newKeyCancel" class="ghost" type="button">Hủy</button>
+        <button id="newKeyConfirm" class="primary" type="button">Tạo</button>
+      </div>
     </div>
+  </div>
 
-    <section class="card">
-      <h2>📱 Đăng nhập Zalo</h2>
-      <div class="stack">
-        <div id="loginStatus" class="row"></div>
-        <div id="loginBody">
-          <div class="empty">Đang tải trạng thái...</div>
-        </div>
-        <div class="row">
-          <button id="zaloStart" type="button" class="primary">Tạo QR đăng nhập</button>
-          <button id="zaloLogout" type="button" class="danger">Đăng xuất Zalo</button>
-          <button id="zaloRefresh" type="button">↻</button>
+  <!-- ========= Modal: show new key ========= -->
+  <div id="showKeyModal" class="modalBackdrop hidden">
+    <div class="card modal stack">
+      <h2>API key đã tạo</h2>
+      <p class="keyHint" style="margin-top: 0;">Copy ngay và đưa cho máy client. Bạn vẫn có thể xem lại sau từ danh sách.</p>
+      <div>
+        <label>Tên</label>
+        <input id="showKeyName" type="text" readonly />
+      </div>
+      <div>
+        <label>API key</label>
+        <div class="urlBox">
+          <input id="showKeyValue" type="text" readonly />
+          <button data-copy="#showKeyValue" type="button">Copy</button>
         </div>
       </div>
-    </section>
-
-    <section class="card">
-      <h2>🔒 Mật khẩu admin</h2>
-      <div class="stack">
-        <div>
-          <label for="curPwd">Mật khẩu hiện tại</label>
-          <input id="curPwd" type="password" autocomplete="current-password" />
-        </div>
-        <div>
-          <label for="newPwd">Mật khẩu mới (≥ 4 ký tự)</label>
-          <input id="newPwd" type="password" autocomplete="new-password" />
-        </div>
-        <div class="row">
-          <button id="changePwdBtn" type="button" class="primary">Đổi mật khẩu</button>
-        </div>
+      <div class="row" style="justify-content: flex-end;">
+        <button id="showKeyClose" class="primary" type="button">Đóng</button>
       </div>
-    </section>
-
-    <section class="card">
-      <h2>📊 Thống kê</h2>
-      <div id="counts" class="row" style="gap: 18px;"></div>
-    </section>
-  </main>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    // ===== state =====
+    // ========= state =========
     const TOKEN_KEY = "szalo-admin-token";
+    const TAB_KEY = "szalo-admin-tab";
     let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
-    let apiKey = "";
+    let firstApiKey = "";       // first usable key — used for /api/status + admin socket
     let socket = null;
+    let activityCache = [];
+    let activityFilterId = "";
+    let currentTab = sessionStorage.getItem(TAB_KEY) || "dashboard";
 
-    // ===== utils =====
+    // ========= utils =========
     function $(s) { return document.querySelector(s); }
+    function $$(s) { return Array.from(document.querySelectorAll(s)); }
     function toast(message) {
       const node = $("#toast");
       node.textContent = message;
       node.classList.add("show");
       clearTimeout(toast._timer);
       toast._timer = setTimeout(() => node.classList.remove("show"), 1800);
+    }
+    function fmtTime(ts) {
+      if (!ts) return "—";
+      const d = new Date(ts);
+      const today = new Date();
+      const same = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+      const time = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return same ? time : `${d.toLocaleDateString("vi-VN")} ${time}`;
+    }
+    function maskKey(key) {
+      if (!key || key.length < 12) return key || "";
+      return key.slice(0, 6) + "…" + key.slice(-4);
     }
 
     function adminFetch(path, init = {}) {
@@ -246,7 +473,7 @@
 
     function apiFetch(path, init = {}) {
       const headers = new Headers(init.headers || {});
-      if (apiKey) headers.set("x-api-key", apiKey);
+      if (firstApiKey) headers.set("x-api-key", firstApiKey);
       if (init.body && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
         headers.set("Content-Type", "application/json");
       }
@@ -259,7 +486,7 @@
       return payload;
     }
 
-    // ===== login =====
+    // ========= login =========
     function showLogin(message) {
       sessionStorage.removeItem(TOKEN_KEY);
       adminToken = "";
@@ -313,7 +540,18 @@
       showLogin("Đã đăng xuất");
     });
 
-    // ===== copy buttons =====
+    // ========= tab switching =========
+    function setTab(tab) {
+      currentTab = tab;
+      sessionStorage.setItem(TAB_KEY, tab);
+      $$(".sideBtn[data-tab]").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+      $$("section[data-pane]").forEach((sec) => sec.classList.toggle("hidden", sec.dataset.pane !== tab));
+      if (tab === "watch") refreshActivity();
+      if (tab === "keys") refreshKeys();
+    }
+    $$(".sideBtn[data-tab]").forEach((btn) => btn.addEventListener("click", () => setTab(btn.dataset.tab)));
+
+    // ========= copy =========
     document.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-copy]");
       if (!button) return;
@@ -329,28 +567,198 @@
       }
     });
 
-    // ===== API key =====
-    $("#apiKeyShow").addEventListener("click", () => {
-      const input = $("#apiKey");
-      input.type = input.type === "password" ? "text" : "password";
-    });
-    $("#apiKeyRotate").addEventListener("click", async () => {
-      if (!confirm("Tạo API key mới sẽ ngắt mọi client đang kết nối. Tiếp tục?")) return;
-      try {
-        const result = await adminJSON("/api/admin/api-key/rotate", { method: "POST" });
-        apiKey = result.apiKey;
-        $("#apiKey").value = apiKey;
-        toast("Đã cấp key mới");
-        connectSocket();
-        refreshLogin();
-      } catch (error) { toast(error.message); }
-    });
-
-    // ===== local URL =====
+    // ========= local URL =========
     $("#localUrl").value = `${location.protocol}//${location.host}`;
 
-    // ===== Zalo login =====
-    function renderLogin(status) {
+    // ========= API keys =========
+    let cachedKeys = [];
+
+    async function refreshKeys() {
+      try {
+        cachedKeys = await adminJSON("/api/admin/api-keys");
+        renderKeys();
+      } catch (error) {
+        if (error.message !== "unauthorized") toast(error.message);
+      }
+    }
+
+    function renderKeys() {
+      $("#keyCount").textContent = String(cachedKeys.length);
+      const tbody = $("#keysTbody");
+      tbody.innerHTML = cachedKeys.map((entry) => {
+        const status = entry.disabled
+          ? `<span class="pill err">Đã vô hiệu</span>`
+          : `<span class="pill ok">Đang hoạt động</span>`;
+        return `<tr data-id="${entry.id}">
+          <td><strong>${escapeHtml(entry.name)}</strong></td>
+          <td><span class="keyCell">${maskKey(entry.key)}</span></td>
+          <td>${status}</td>
+          <td>${entry.lastSeenAt ? fmtTime(entry.lastSeenAt) : "—"} ${entry.lastSeenIp ? `<small style="color:var(--muted);">${entry.lastSeenIp}</small>` : ""}</td>
+          <td>
+            <div class="actionsCell">
+              <button class="small" data-act="copy" type="button">Copy</button>
+              <button class="small" data-act="rename" type="button">Đổi tên</button>
+              <button class="small" data-act="${entry.disabled ? 'enable' : 'disable'}" type="button">${entry.disabled ? "Bật" : "Vô hiệu"}</button>
+              <button class="small danger" data-act="revoke" type="button">Xóa</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join("");
+
+      // Update select on Connection Watch
+      const select = $("#activityFilter");
+      const oldValue = select.value;
+      select.innerHTML = `<option value="">Tất cả keys</option>` + cachedKeys.map((k) => `<option value="${k.id}">${escapeHtml(k.name)}</option>`).join("");
+      select.value = oldValue;
+
+      // First key for /api/status etc.
+      const firstActive = cachedKeys.find((k) => !k.disabled) || cachedKeys[0];
+      const next = firstActive ? firstActive.key : "";
+      if (next !== firstApiKey) {
+        firstApiKey = next;
+        connectAdminSocket();
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    $("#keysTbody").addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-act]");
+      if (!button) return;
+      const tr = button.closest("tr[data-id]");
+      const id = tr.dataset.id;
+      const entry = cachedKeys.find((k) => k.id === id);
+      if (!entry) return;
+      const act = button.dataset.act;
+      try {
+        if (act === "copy") {
+          await navigator.clipboard.writeText(entry.key);
+          toast("Đã copy key đầy đủ");
+        } else if (act === "rename") {
+          const name = prompt("Tên mới cho key:", entry.name);
+          if (name && name.trim() && name.trim() !== entry.name) {
+            await adminJSON(`/api/admin/api-keys/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+            await refreshKeys();
+            toast("Đã đổi tên");
+          }
+        } else if (act === "disable" || act === "enable") {
+          await adminJSON(`/api/admin/api-keys/${id}`, { method: "PATCH", body: JSON.stringify({ disabled: act === "disable" }) });
+          await refreshKeys();
+          toast(act === "disable" ? "Đã vô hiệu" : "Đã bật lại");
+        } else if (act === "revoke") {
+          if (!confirm(`Xóa key "${entry.name}"? Mọi máy đang dùng key này sẽ bị ngắt.`)) return;
+          await adminJSON(`/api/admin/api-keys/${id}`, { method: "DELETE" });
+          await refreshKeys();
+          toast("Đã xóa");
+        }
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+
+    $("#newKeyBtn").addEventListener("click", () => {
+      $("#newKeyName").value = "";
+      $("#newKeyModal").classList.remove("hidden");
+      setTimeout(() => $("#newKeyName").focus(), 50);
+    });
+    $("#newKeyCancel").addEventListener("click", () => $("#newKeyModal").classList.add("hidden"));
+    $("#newKeyConfirm").addEventListener("click", async () => {
+      const name = $("#newKeyName").value.trim();
+      if (!name) { toast("Nhập tên trước đã"); return; }
+      try {
+        const created = await adminJSON("/api/admin/api-keys", { method: "POST", body: JSON.stringify({ name }) });
+        $("#newKeyModal").classList.add("hidden");
+        $("#showKeyName").value = created.name;
+        $("#showKeyValue").value = created.key;
+        $("#showKeyModal").classList.remove("hidden");
+        await refreshKeys();
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+    $("#showKeyClose").addEventListener("click", () => $("#showKeyModal").classList.add("hidden"));
+
+    // ========= Connection Watch =========
+    function renderConnections(connections) {
+      const tbody = $("#liveTbody");
+      $("#liveTitle").textContent = `Đang online (${connections.length})`;
+      const liveCountBadge = $("#liveCount");
+      if (connections.length > 0) {
+        liveCountBadge.textContent = String(connections.length);
+        liveCountBadge.classList.remove("hidden");
+      } else {
+        liveCountBadge.classList.add("hidden");
+      }
+      if (connections.length === 0) {
+        tbody.innerHTML = "";
+        $("#liveEmpty").classList.remove("hidden");
+        return;
+      }
+      $("#liveEmpty").classList.add("hidden");
+      tbody.innerHTML = connections.map((c) => `<tr>
+        <td><strong>${escapeHtml(c.keyName || "(không tên)")}</strong></td>
+        <td><span class="keyCell">${escapeHtml(c.ip || "—")}</span></td>
+        <td>${fmtTime(c.connectedAt)}</td>
+      </tr>`).join("");
+    }
+
+    function actionLabel(action) {
+      const labels = {
+        connect: "kết nối",
+        disconnect: "ngắt kết nối",
+        open_thread: "mở chat",
+        send_message: "gửi tin nhắn",
+        zalo_login: "yêu cầu QR Zalo",
+        zalo_logout: "đăng xuất Zalo",
+      };
+      return labels[action] || action;
+    }
+
+    function renderActivity() {
+      const filtered = activityFilterId
+        ? activityCache.filter((event) => event.keyId === activityFilterId)
+        : activityCache;
+      const feed = $("#activityFeed");
+      if (filtered.length === 0) {
+        feed.innerHTML = `<div class="empty">Chưa có hoạt động.</div>`;
+        return;
+      }
+      feed.innerHTML = filtered.slice().reverse().map((event) => {
+        const target = event.threadId ? `<span class="target">→ ${escapeHtml(event.threadId)}</span>` : "";
+        const detail = event.detail
+          ? Object.entries(event.detail).filter(([k, v]) => v !== undefined && v !== "" && k !== "ip" && k !== "socketId").map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(" ")
+          : "";
+        return `<div class="activityRow">
+          <span class="ts">${fmtTime(event.ts)}</span>
+          <div>
+            <span class="actorName">${escapeHtml(event.keyName || "(?)")}</span>
+            <span style="color: var(--muted);">${actionLabel(event.action)}</span>
+            ${target}
+            ${detail ? `<small style="color:var(--muted); margin-left:6px;">${escapeHtml(detail)}</small>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    async function refreshActivity() {
+      try {
+        activityCache = await adminJSON("/api/admin/activity?limit=200");
+        renderActivity();
+      } catch (error) {
+        if (error.message !== "unauthorized") toast(error.message);
+      }
+    }
+
+    $("#activityFilter").addEventListener("change", (event) => {
+      activityFilterId = event.target.value;
+      renderActivity();
+    });
+    $("#activityRefresh").addEventListener("click", refreshActivity);
+
+    // ========= Zalo login (dashboard) =========
+    function renderZaloLogin(status) {
       const stateEl = $("#loginStatus");
       const bodyEl = $("#loginBody");
       const stateLabels = {
@@ -393,65 +801,145 @@
     });
     $("#zaloLogout").addEventListener("click", async () => {
       if (!confirm("Đăng xuất tài khoản Zalo khỏi server?")) return;
-      try { await apiJSON("/api/logout", { method: "POST" }); toast("Đã đăng xuất"); refreshLogin(); }
+      try { await apiJSON("/api/logout", { method: "POST" }); toast("Đã đăng xuất"); refreshZaloLogin(); }
       catch (error) { toast(error.message); }
     });
-    $("#zaloRefresh").addEventListener("click", refreshLogin);
+    $("#zaloRefresh").addEventListener("click", refreshZaloLogin);
 
-    async function refreshLogin() {
+    async function refreshZaloLogin() {
+      if (!firstApiKey) return;
       try {
         const status = await apiJSON("/api/status");
-        renderLogin(status);
+        renderZaloLogin(status);
       } catch (error) {
         $("#loginStatus").innerHTML = `<span class="pill err">${error.message}</span>`;
       }
     }
 
-    // ===== tunnel =====
+    // ========= Tunnel =========
+    let tunnelMode = "quick";
+    function setTunnelMode(mode) {
+      tunnelMode = mode;
+      $("#modeQuick").classList.toggle("active", mode === "quick");
+      $("#modeNamed").classList.toggle("active", mode === "named");
+      $("#paneQuick").classList.toggle("hidden", mode !== "quick");
+      $("#paneNamed").classList.toggle("hidden", mode !== "named");
+    }
+    $("#modeQuick").addEventListener("click", () => setTunnelMode("quick"));
+    $("#modeNamed").addEventListener("click", () => setTunnelMode("named"));
+
     function renderTunnel(status) {
       $("#publicUrl").value = status.publicUrl || "";
-      const stateEl = $("#tunnelStatus");
+      const dashState = $("#dashTunnelState");
       const labels = {
-        stopped: ["muted", "Tắt"],
+        stopped: ["muted", "Tunnel tắt"],
         starting: ["warn", "Đang khởi tạo..."],
-        running: ["ok", "Đang chạy"],
+        running: ["ok", `Đang chạy${status.mode ? " — " + status.mode : ""}`],
         error: ["err", status.error || "Lỗi"],
       };
       const [pill, label] = labels[status.state] || ["muted", status.state];
-      stateEl.innerHTML = `<span class="pill ${pill}">${label}</span>` +
-        (status.error && status.state !== "error" ? `<span class="pill warn">${status.error}</span>` : "");
+      const html = `<span class="pill ${pill}">${label}</span>` +
+        (status.error && status.state !== "error" ? `<span class="pill warn">${escapeHtml(status.error)}</span>` : "");
+      dashState.innerHTML = html;
+      $("#tunnelStateRow").innerHTML = html;
       $("#tunnelLogs").textContent = (status.recentLogs && status.recentLogs.length)
         ? status.recentLogs.join("\n") : "Chưa có log";
+
+      // Apply persisted Cloudflare config to inputs (if user hasn't dirtied them)
+      if (status.config) {
+        const cfn = $("#cfTunnelName"), cfd = $("#cfDomain"), cfs = $("#cfSubdomain");
+        if (!cfn.dataset.dirty) cfn.value = status.config.tunnelName || "";
+        if (!cfd.dataset.dirty) cfd.value = status.config.domain || "";
+        if (!cfs.dataset.dirty) cfs.value = status.config.subdomain || "";
+        updatePreview();
+      }
     }
 
-    $("#tunnelStart").addEventListener("click", async () => {
-      try { renderTunnel(await adminJSON("/api/admin/tunnel/start", { method: "POST" })); }
+    function updatePreview() {
+      const sub = $("#cfSubdomain").value.trim();
+      const dom = $("#cfDomain").value.trim();
+      $("#cfPreview").textContent = sub && dom ? `${sub}.${dom}` : "subdomain.domain";
+    }
+    ["#cfTunnelName", "#cfDomain", "#cfSubdomain"].forEach((sel) => {
+      const el = $(sel);
+      el.addEventListener("input", () => { el.dataset.dirty = "1"; updatePreview(); });
+    });
+
+    $("#quickStart").addEventListener("click", async () => {
+      try { renderTunnel({ ...(await adminJSON("/api/admin/tunnel/quick", { method: "POST" })), config: { tunnelName: $("#cfTunnelName").value, domain: $("#cfDomain").value, subdomain: $("#cfSubdomain").value } }); }
       catch (error) { toast(error.message); }
     });
-    $("#tunnelStop").addEventListener("click", async () => {
+    $("#quickStop").addEventListener("click", async () => {
       try { renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" })); }
       catch (error) { toast(error.message); }
     });
-    $("#tunnelRefresh").addEventListener("click", async () => {
-      try { renderTunnel(await adminJSON("/api/admin/tunnel/status")); }
+    $("#namedStart").addEventListener("click", async () => {
+      const tunnelName = $("#cfTunnelName").value.trim();
+      const domain = $("#cfDomain").value.trim();
+      const subdomain = $("#cfSubdomain").value.trim();
+      if (!tunnelName || !domain || !subdomain) { toast("Cần đủ tunnel name, domain, subdomain"); return; }
+      try {
+        renderTunnel(await adminJSON("/api/admin/tunnel/named", {
+          method: "POST",
+          body: JSON.stringify({ tunnelName, domain, subdomain }),
+        }));
+      } catch (error) { toast(error.message); }
+    });
+    $("#namedStop").addEventListener("click", async () => {
+      try { renderTunnel(await adminJSON("/api/admin/tunnel/stop", { method: "POST" })); }
       catch (error) { toast(error.message); }
     });
+    $("#authorizeBtn").addEventListener("click", async () => {
+      $("#authorizeBtn").disabled = true;
+      $("#authorizeUrl").classList.add("hidden");
+      toast("Đang chạy cloudflared tunnel login...");
+      try {
+        const result = await adminJSON("/api/admin/tunnel/authorize", { method: "POST" });
+        if (result.url) {
+          $("#authorizeUrlLink").href = result.url;
+          $("#authorizeUrlLink").textContent = result.url;
+          $("#authorizeUrl").classList.remove("hidden");
+          window.open(result.url, "_blank", "noopener");
+        }
+        toast(result.ok ? "Authorize thành công" : (result.error || "Authorize thất bại"));
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        $("#authorizeBtn").disabled = false;
+      }
+    });
 
-    // ===== password change =====
+    // ========= password change =========
+    function checkPasswordsMatch() {
+      const newPwd = $("#newPwd").value;
+      const confirm = $("#confirmPwd").value;
+      const mismatch = newPwd && confirm && newPwd !== confirm;
+      $("#pwdMismatch").classList.toggle("hidden", !mismatch);
+    }
+    $("#newPwd").addEventListener("input", checkPasswordsMatch);
+    $("#confirmPwd").addEventListener("input", checkPasswordsMatch);
+
     $("#changePwdBtn").addEventListener("click", async () => {
       const currentPassword = $("#curPwd").value;
       const newPassword = $("#newPwd").value;
-      if (!currentPassword || !newPassword) {
-        toast("Nhập đủ mật khẩu hiện tại và mật khẩu mới");
+      const confirmPassword = $("#confirmPwd").value;
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        toast("Nhập đủ 3 ô mật khẩu");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        toast("Hai ô nhập lại không khớp");
         return;
       }
       try {
         await adminJSON("/api/admin/password", {
           method: "POST",
-          body: JSON.stringify({ currentPassword, newPassword }),
+          body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
         });
         $("#curPwd").value = "";
         $("#newPwd").value = "";
+        $("#confirmPwd").value = "";
+        $("#pwdMismatch").classList.add("hidden");
         toast("Đã đổi mật khẩu");
         $("#passwordBanner").classList.add("hidden");
       } catch (error) {
@@ -459,33 +947,47 @@
       }
     });
 
-    // ===== socket =====
-    function connectSocket() {
-      if (socket) { try { socket.disconnect(); } catch {} }
-      if (!apiKey) return;
-      socket = io({ transports: ["websocket"], auth: { apiKey } });
-      socket.on("status", renderLogin);
+    // ========= sockets =========
+    function connectAdminSocket() {
+      if (socket) { try { socket.disconnect(); } catch {} socket = null; }
+      if (!firstApiKey) return;
+      socket = io({ transports: ["websocket"], auth: { apiKey: firstApiKey, admin: true } });
+      socket.on("status", renderZaloLogin);
       socket.on("tunnel_status", renderTunnel);
+      socket.on("connections", renderConnections);
+      socket.on("activity", (event) => {
+        activityCache.push(event);
+        if (activityCache.length > 500) activityCache = activityCache.slice(-500);
+        if (currentTab === "watch") renderActivity();
+      });
+      socket.on("activity_history", (events) => {
+        activityCache = events || [];
+        if (currentTab === "watch") renderActivity();
+      });
     }
 
-    // ===== boot =====
+    // ========= boot =========
     async function bootAdmin() {
       try {
         const me = await adminJSON("/api/admin/me");
-        apiKey = me.apiKey;
-        $("#apiKey").value = apiKey;
-        if (me.mustChangePassword) {
-          $("#passwordBanner").classList.remove("hidden");
-        } else {
-          $("#passwordBanner").classList.add("hidden");
-        }
-        connectSocket();
-        const [status, tunnelStatus] = await Promise.allSettled([
-          apiJSON("/api/status"),
-          adminJSON("/api/admin/tunnel/status"),
-        ]);
-        if (status.status === "fulfilled") renderLogin(status.value);
-        if (tunnelStatus.status === "fulfilled") renderTunnel(tunnelStatus.value);
+        cachedKeys = me.apiKeys || [];
+        renderKeys();
+        if (me.mustChangePassword) $("#passwordBanner").classList.remove("hidden");
+        else $("#passwordBanner").classList.add("hidden");
+
+        // Tunnel state
+        adminJSON("/api/admin/tunnel/status").then(renderTunnel).catch(() => undefined);
+
+        // Zalo status (uses API key)
+        if (firstApiKey) refreshZaloLogin();
+
+        // Initial activity feed
+        adminJSON("/api/admin/activity?limit=200").then((events) => {
+          activityCache = events || [];
+          renderActivity();
+        }).catch(() => undefined);
+
+        setTab(currentTab);
       } catch (error) {
         if (error.message !== "unauthorized") toast(error.message);
       }

@@ -2,7 +2,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { createServer } from "node:http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,6 +13,7 @@ import { Server } from "socket.io";
 import { TunnelManager } from "./tunnel";
 import { Database } from "./db";
 import { AdminSessions } from "./admin";
+import { ActivityLog, type ActivityEvent } from "./activity";
 import {
   AvatarSize,
   LoginQRCallbackEventType,
@@ -58,13 +59,31 @@ const DATA_DIR = process.env.DATA_DIR
 const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
   : path.join(DATA_DIR, "db.json");
+const ACTIVITY_FILE = path.join(DATA_DIR, "activity.json");
 const SESSION_FILE = path.join(DATA_DIR, "session.json");
 
-// Server config (API key + admin password) lives in db.json — generated on
+// Server config (API keys + admin password) lives in db.json — generated on
 // first boot. Admin password defaults to "123456"; the user is expected to
 // change it via the admin UI.
 const db = new Database(DB_FILE);
 const adminSessions = new AdminSessions();
+const activity = new ActivityLog(ACTIVITY_FILE);
+
+// Live connections — each entry is one connected client.
+type LiveConnection = {
+  socketId: string;
+  keyId: string;
+  keyName: string;
+  ip: string;
+  connectedAt: number;
+};
+const liveConnections = new Map<string, LiveConnection>();
+
+function ipFor(req: express.Request): string {
+  const forwarded = req.header("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() ?? "";
+  return req.ip ?? req.socket.remoteAddress ?? "";
+}
 const FRIENDS_CACHE_FILE = path.join(DATA_DIR, "friends.json");
 const CONVERSATIONS_CACHE_FILE = path.join(DATA_DIR, "conversations.json");
 const MESSAGES_CACHE_FILE = path.join(DATA_DIR, "messages.json");
@@ -227,9 +246,12 @@ function readAdminToken(req: express.Request): string {
   return "";
 }
 
-function timingSafeEquals(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// Augment Express request with the matched API key entry so handlers can log
+// activity tagged with the human-friendly key name.
+declare module "express-serve-static-core" {
+  interface Request {
+    apiKeyEntry?: { id: string; name: string };
+  }
 }
 
 app.use((req, res, next) => {
@@ -247,25 +269,35 @@ app.use((req, res, next) => {
     return next();
   }
 
-  // Regular API: gated by the API key from db.json.
+  // Regular API: gated by a key from db.json. Multi-key — admin can disable
+  // a single key without affecting other clients.
   const provided = readApiKey(req);
-  if (!provided || !timingSafeEquals(provided, db.getApiKey())) {
+  const entry = provided ? db.findApiKey(provided) : undefined;
+  if (!entry) {
     res.status(401).json({ error: "Invalid or missing API key" });
     return;
   }
+  if (entry.disabled) {
+    res.status(403).json({ error: "API key đã bị vô hiệu hóa" });
+    return;
+  }
+  req.apiKeyEntry = { id: entry.id, name: entry.name };
+  db.markApiKeyUsed(entry.id, ipFor(req));
   next();
 });
 
-// Socket.IO auth — same key, sent via auth.token / auth.apiKey or query.
+// Socket.IO auth — same multi-key lookup, attached to socket.data so handlers
+// can attribute every realtime event to the right client.
 io.use((socket, next) => {
   const auth = socket.handshake.auth ?? {};
   const candidate = String(
     auth.apiKey ?? auth.token ?? socket.handshake.query?.api_key ?? socket.handshake.headers["x-api-key"] ?? "",
   ).trim();
-  if (!candidate || !timingSafeEquals(candidate, db.getApiKey())) {
-    next(new Error("Invalid or missing API key"));
-    return;
-  }
+  const entry = candidate ? db.findApiKey(candidate) : undefined;
+  if (!entry) return next(new Error("Invalid or missing API key"));
+  if (entry.disabled) return next(new Error("API key đã bị vô hiệu hóa"));
+  (socket.data as { keyId?: string; keyName?: string }).keyId = entry.id;
+  (socket.data as { keyId?: string; keyName?: string }).keyName = entry.name;
   next();
 });
 
@@ -899,8 +931,9 @@ app.post("/api/admin/logout", (req, res) => {
 
 app.get("/api/admin/me", (_req, res) => {
   res.json({
-    apiKey: db.getApiKey(),
+    apiKeys: db.listApiKeys(),
     mustChangePassword: db.verifyAdminPassword("123456"),
+    cloudflare: db.getCloudflareConfig(),
     meta: db.meta(),
   });
 });
@@ -908,6 +941,7 @@ app.get("/api/admin/me", (_req, res) => {
 app.post("/api/admin/password", (req, res) => {
   const current = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
   const next = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+  const confirm = typeof req.body?.confirmPassword === "string" ? req.body.confirmPassword : "";
   if (!db.verifyAdminPassword(current)) {
     res.status(401).json({ error: "Mật khẩu hiện tại sai" });
     return;
@@ -916,28 +950,109 @@ app.post("/api/admin/password", (req, res) => {
     res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 4 ký tự" });
     return;
   }
+  if (next !== confirm) {
+    res.status(400).json({ error: "Hai ô nhập lại không khớp" });
+    return;
+  }
   db.setAdminPassword(next);
   res.json({ ok: true });
 });
 
-app.post("/api/admin/api-key/rotate", (_req, res) => {
-  const apiKey = db.rotateApiKey();
-  // Boot every connected socket — old key is no longer valid.
-  io.disconnectSockets(true);
-  res.json({ apiKey });
+// === API key management (multi-key) ===
+app.get("/api/admin/api-keys", (_req, res) => {
+  res.json(db.listApiKeys());
+});
+
+app.post("/api/admin/api-keys", (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name : "";
+  if (!name.trim()) {
+    res.status(400).json({ error: "Tên key không được để trống" });
+    return;
+  }
+  const entry = db.createApiKey(name);
+  res.json(entry);
+});
+
+app.patch("/api/admin/api-keys/:id", (req, res) => {
+  const id = req.params.id;
+  if (!db.findApiKeyById(id)) {
+    res.status(404).json({ error: "Không tìm thấy API key" });
+    return;
+  }
+  if (typeof req.body?.name === "string" && req.body.name.trim()) {
+    db.renameApiKey(id, req.body.name);
+  }
+  if (typeof req.body?.disabled === "boolean") {
+    const wasEnabled = !req.body.disabled;
+    db.setApiKeyDisabled(id, req.body.disabled);
+    if (!wasEnabled) {
+      // Boot any sockets currently using this key.
+      for (const socket of io.sockets.sockets.values()) {
+        if ((socket.data as { keyId?: string }).keyId === id) {
+          socket.disconnect(true);
+        }
+      }
+    }
+  }
+  res.json(db.findApiKeyById(id));
+});
+
+app.delete("/api/admin/api-keys/:id", (req, res) => {
+  const id = req.params.id;
+  if (!db.revokeApiKey(id)) {
+    res.status(404).json({ error: "Không tìm thấy API key" });
+    return;
+  }
+  for (const socket of io.sockets.sockets.values()) {
+    if ((socket.data as { keyId?: string }).keyId === id) {
+      socket.disconnect(true);
+    }
+  }
+  res.json({ ok: true });
+});
+
+// === Connection watch ===
+app.get("/api/admin/connections", (_req, res) => {
+  res.json(Array.from(liveConnections.values()));
+});
+
+app.get("/api/admin/activity", (req, res) => {
+  const keyId = typeof req.query.keyId === "string" ? req.query.keyId : undefined;
+  const limit = Number(req.query.limit) || 200;
+  const since = req.query.since ? Number(req.query.since) : undefined;
+  res.json(activity.list({ keyId, limit, since }));
 });
 
 // === Cloudflare tunnel admin ===
 app.get("/api/admin/tunnel/status", (_req, res) => {
-  res.json(tunnel.getStatus());
+  res.json({ ...tunnel.getStatus(), config: db.getCloudflareConfig() });
 });
-app.post("/api/admin/tunnel/start", async (_req, res) => {
-  const status = await tunnel.start(PORT);
+app.post("/api/admin/tunnel/quick", async (_req, res) => {
+  const status = await tunnel.startQuick(PORT);
+  res.json(status);
+});
+app.post("/api/admin/tunnel/named", async (req, res) => {
+  const tunnelName = typeof req.body?.tunnelName === "string" ? req.body.tunnelName.trim() : "";
+  const domain = typeof req.body?.domain === "string" ? req.body.domain.trim() : "";
+  const subdomain = typeof req.body?.subdomain === "string" ? req.body.subdomain.trim() : "";
+  if (!tunnelName || !domain || !subdomain) {
+    res.status(400).json({ error: "Cần đủ tunnel name, domain, subdomain" });
+    return;
+  }
+  db.setCloudflareConfig({ tunnelName, domain, subdomain });
+  const status = await tunnel.startNamed(PORT, tunnelName, subdomain, domain);
   res.json(status);
 });
 app.post("/api/admin/tunnel/stop", async (_req, res) => {
   const status = await tunnel.stop();
   res.json(status);
+});
+app.post("/api/admin/tunnel/authorize", async (_req, res) => {
+  // cloudflared tunnel login — opens a browser URL on the server-side host so
+  // the user (or someone with shell access) authorizes the domain. We surface
+  // the URL out of stdout so the admin UI can show it.
+  const result = await tunnel.authorize();
+  res.json(result);
 });
 
 app.get("/api/status", (_req, res) => {
@@ -1030,7 +1145,13 @@ app.get("/api/attachments/proxy", async (req, res) => {
   stream.pipe(res);
 });
 
-app.post("/api/login/qr", async (_req, res) => {
+app.post("/api/login/qr", async (req, res) => {
+  activity.record({
+    ts: Date.now(),
+    keyId: req.apiKeyEntry?.id ?? null,
+    keyName: req.apiKeyEntry?.name ?? "",
+    action: "zalo_login",
+  });
   if (zaloApi) {
     res.json({ ok: true, state: "online" });
     return;
@@ -1089,7 +1210,13 @@ app.post("/api/login/qr", async (_req, res) => {
   res.json({ ok: true, state: loginState });
 });
 
-app.post("/api/logout", async (_req, res) => {
+app.post("/api/logout", async (req, res) => {
+  activity.record({
+    ts: Date.now(),
+    keyId: req.apiKeyEntry?.id ?? null,
+    keyName: req.apiKeyEntry?.name ?? "",
+    action: "zalo_logout",
+  });
   zaloApi?.listener.stop();
   zaloApi = null;
   account = null;
@@ -1347,9 +1474,17 @@ app.post("/api/conversations/:type/:threadId/action", async (req, res) => {
 });
 
 app.get("/api/messages/:type/:threadId", async (req, res) => {
-  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   const { type, threadId } = req.params as { type: ThreadKind; threadId: string };
   const forceRefresh = req.query.refresh === "1";
+  activity.record({
+    ts: Date.now(),
+    keyId: req.apiKeyEntry?.id ?? null,
+    keyName: req.apiKeyEntry?.name ?? "",
+    action: "open_thread",
+    threadId,
+    detail: { type, refresh: forceRefresh },
+  });
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   if (type === "user") {
     const conversation = conversations.get(threadId);
     if (forceRefresh || !conversation?.avatar || isPlaceholderConversationName(threadId, conversation.name)) {
@@ -1423,6 +1558,15 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
     return;
   }
 
+  activity.record({
+    ts: Date.now(),
+    keyId: req.apiKeyEntry?.id ?? null,
+    keyName: req.apiKeyEntry?.name ?? "",
+    action: "send_message",
+    threadId,
+    detail: { type, textLength: text?.length ?? 0, fileCount: files.length },
+  });
+
   const attempt = recordSendAttempt({
     ts: Date.now(),
     threadId,
@@ -1470,9 +1614,48 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
 });
 
 io.on("connection", (socket) => {
+  const data = socket.data as { keyId?: string; keyName?: string };
+  const keyId = data.keyId ?? "";
+  const keyName = data.keyName ?? "";
+  const ip = (socket.handshake.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim()
+    ?? socket.handshake.address ?? "";
+
+  liveConnections.set(socket.id, {
+    socketId: socket.id,
+    keyId,
+    keyName,
+    ip,
+    connectedAt: Date.now(),
+  });
+  io.to("admins").emit("connections", Array.from(liveConnections.values()));
+  activity.record({ ts: Date.now(), keyId, keyName, action: "connect", detail: { ip, socketId: socket.id } });
+
+  socket.on("disconnect", (reason) => {
+    liveConnections.delete(socket.id);
+    io.to("admins").emit("connections", Array.from(liveConnections.values()));
+    activity.record({ ts: Date.now(), keyId, keyName, action: "disconnect", detail: { reason } });
+  });
+
   socket.emit("status", { state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
   socket.emit("conversations", sortedConversations());
   socket.emit("tunnel_status", tunnel.getStatus());
+});
+
+// Admin sockets join a private room for live updates (connections + activity).
+// They authenticate via the same API key (admin UI fetches it from /api/admin/me)
+// AND must include `auth.admin: true` to opt into admin events.
+io.on("connection", (socket) => {
+  const auth = socket.handshake.auth ?? {};
+  if (auth.admin === true || auth.admin === "true") {
+    socket.join("admins");
+    socket.emit("connections", Array.from(liveConnections.values()));
+    socket.emit("activity_history", activity.list({ limit: 200 }));
+  }
+});
+
+// Push every new activity event to admins in real time.
+activity.on((event: ActivityEvent) => {
+  io.to("admins").emit("activity", event);
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
