@@ -2179,3 +2179,161 @@ span.fileAttachment {
   text-decoration-color: var(--accent);
   color: var(--accent);
 }
+
+/* ===== QUICK REPLY PICKER ===== */
+.quickReplyPicker {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+  max-height: 240px;
+  display: flex;
+  flex-direction: column;
+  z-index: 15;
+}
+.qrpHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.qrpHeader button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+.qrpList {
+  overflow-y: auto;
+  padding: 4px;
+}
+.qrpItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.qrpItem:hover { background: var(--bg-primary); }
+.qrpKeyword { color: var(--accent); font-weight: 600; min-width: 60px; }
+.qrpTitle { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrpEmpty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 0.82rem; }
+
+/* ===== FIND USER PANEL ===== */
+.findUserPanel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 80px;
+  z-index: 40;
+}
+.fuHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(480px, calc(100vw - 32px));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 12px 12px 0 0;
+  padding: 14px 16px;
+}
+.fuHeader strong { flex: 1; }
+.fuHeader button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.fuBody {
+  width: min(480px, calc(100vw - 32px));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  padding: 16px;
+}
+.fuSearch {
+  display: flex;
+  gap: 8px;
+}
+.fuSearch input {
+  flex: 1;
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font: inherit;
+  outline: none;
+}
+.fuSearch input:focus { border-color: var(--accent); }
+.fuSearch button {
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 0;
+  background: linear-gradient(135deg, var(--accent), #5c7cff);
+  color: white;
+  cursor: pointer;
+  font: inherit;
+}
+.fuSearch button:disabled { opacity: 0.5; }
+.fuError { color: #fca5a5; font-size: 0.85rem; margin-top: 10px; }
+.fuHint { color: var(--text-muted); font-size: 0.85rem; margin-top: 14px; text-align: center; }
+.fuResult {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--bg-primary);
+  border-radius: 10px;
+}
+.fuAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  color: white;
+  font-weight: 700;
+  font-size: 18px;
+}
+.fuAvatar img { width: 100%; height: 100%; object-fit: cover; }
+.fuInfo { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.fuInfo strong { font-size: 0.95rem; }
+.fuInfo small { color: var(--text-muted); font-size: 0.78rem; }
+.fuActions { display: flex; gap: 6px; flex-wrap: wrap; }
+.fuActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+.fuActions button:hover { border-color: var(--accent); }
+.fuActions button:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -7,6 +7,8 @@ import { subscribeSocket } from './socket'
 import SettingsScreen from './SettingsScreen'
 import MessageActions from './MessageActions'
 import GlobalSearch from './GlobalSearch'
+import QuickReplyPicker from './QuickReplyPicker'
+import FindUser from './FindUser'
 import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
@@ -340,6 +342,8 @@ function App() {
   const [showAttachments, setShowAttachments] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
+  const [showFindUser, setShowFindUser] = useState(false)
+  const [showQuickReply, setShowQuickReply] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
@@ -783,6 +787,12 @@ function App() {
 
   function updateText(value: string) {
     setText(value)
+    // Show quick reply picker when text starts with "/"
+    if (value.startsWith('/') && value.length >= 1) {
+      setShowQuickReply(true)
+    } else {
+      setShowQuickReply(false)
+    }
     if (!selected || Date.now() - lastTypingRef.current < 2500) return
     lastTypingRef.current = Date.now()
     apiJson('/api/events/typing', {
@@ -1037,6 +1047,17 @@ function App() {
           onClose={() => setShowGlobalSearch(false)}
         />
       )}
+      {showFindUser && (
+        <FindUser
+          onOpenChat={(userId, name) => {
+            setShowFindUser(false)
+            const existing = conversations.find((c) => c.id === userId)
+            const target = existing ?? { id: userId, type: 'user' as ThreadKind, name, unread: 0 }
+            openConversation(target as Conversation)
+          }}
+          onClose={() => setShowFindUser(false)}
+        />
+      )}
       {/* === ICON RAIL === */}
       <nav className="iconRail">
         <img className="appLogo" src="/szalo-icon.png" alt="Szalo" />
@@ -1090,6 +1111,9 @@ function App() {
         <span className="railSpacer" />
         <button className="railButton" onClick={() => setShowGlobalSearch(true)} title="Tìm tin nhắn toàn cục">
           <Search size={20} />
+        </button>
+        <button className="railButton" onClick={() => setShowFindUser(true)} title="Tìm người dùng Zalo">
+          <Plus size={20} />
         </button>
         <button className="railButton" onClick={() => setShowSettings(true)} title="Cài đặt server">
           <SettingsIcon size={20} />
@@ -1614,6 +1638,13 @@ function App() {
               onDragLeave={() => setDragActive(false)}
               onDrop={handleComposerDrop}
             >
+              {showQuickReply && (
+                <QuickReplyPicker
+                  filter={text}
+                  onSelect={(reply) => { setText(reply); setShowQuickReply(false) }}
+                  onClose={() => setShowQuickReply(false)}
+                />
+              )}
               <div className="dropHint">Kéo file vào đây hoặc paste ảnh/file từ clipboard. Tối đa {MAX_FILE_COUNT} file, {formatBytes(MAX_FILE_BYTES)}/file.</div>
               {files.length > 0 && <div className="fileQueue">{files.map((file, index) => (
                 <span key={`${file.name}-${index}`} title={`${file.name} - ${formatBytes(file.size)}`}>
