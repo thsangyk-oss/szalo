@@ -118,23 +118,40 @@ export class TunnelManager extends EventEmitter {
     }
     const fqdn = `${subdomain}.${domain}`;
 
-    // Step 1: create if missing.
-    try {
-      const create = await runOnce(binary, ["tunnel", "create", tunnelName]);
-      this.recordLog(`[create] ${(create.stdout || create.stderr).trim()}`);
-    } catch (error) {
-      const msg = (error as NodeJS.ErrnoException).code === "ENOENT"
-        ? "cloudflared chưa cài đúng. Bấm 'Tải cloudflared' để tải lại."
-        : errorMessage(error);
-      this.status = { ...this.status, state: "error", error: msg, mode: "named" };
-      this.emit("status", this.getStatus());
-      return this.getStatus();
+    // Step 1: only create the tunnel if it doesn't already exist. cloudflared
+    // happily creates a new tunnel with a fresh UUID every time you call
+    // `tunnel create <name>`, so we have to gate it on a tunnel-list lookup
+    // first; otherwise route-dns fails with a "record already exists" because
+    // the previous run's record still points at the old UUID.
+    const existing = this.listTunnels().find((t) => t.name === tunnelName);
+    if (!existing) {
+      try {
+        const create = await runOnce(binary, ["tunnel", "create", tunnelName]);
+        this.recordLog(`[create] ${(create.stdout || create.stderr).trim()}`);
+        if (create.code !== 0 && !/already exists/i.test(create.stderr + create.stdout)) {
+          this.recordLog(`[create] non-zero exit ${create.code}, continuing anyway`);
+        }
+      } catch (error) {
+        const msg = (error as NodeJS.ErrnoException).code === "ENOENT"
+          ? "cloudflared chưa cài đúng. Bấm 'Tải cloudflared' để tải lại."
+          : errorMessage(error);
+        this.status = { ...this.status, state: "error", error: msg, mode: "named" };
+        this.emit("status", this.getStatus());
+        return this.getStatus();
+      }
+    } else {
+      this.recordLog(`[create] tunnel '${tunnelName}' already exists (id=${existing.id.slice(0, 8)}…), skipping create`);
     }
 
-    // Step 2: route DNS.
+    // Step 2: route DNS. Use --overwrite-dns so a stale CNAME from a previous
+    // tunnel UUID gets replaced rather than triggering "record already exists".
     try {
-      const route = await runOnce(binary, ["tunnel", "route", "dns", tunnelName, fqdn]);
-      this.recordLog(`[route] ${(route.stdout || route.stderr).trim()}`);
+      const route = await runOnce(binary, ["tunnel", "route", "dns", "--overwrite-dns", tunnelName, fqdn]);
+      const combined = (route.stdout + route.stderr).trim();
+      this.recordLog(`[route] ${combined}`);
+      if (route.code !== 0) {
+        this.recordLog(`[route] route failed (code ${route.code}) — tunnel may not be reachable at ${fqdn}`);
+      }
     } catch (error) {
       this.recordLog(`[route] error: ${errorMessage(error)}`);
     }
