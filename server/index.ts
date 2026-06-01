@@ -198,6 +198,10 @@ const sendAttempts: SendAttempt[] = [];
 const clientEvents: ClientEvent[] = [];
 const listenerEvents: ListenerEvent[] = [];
 const userHydrationInFlight = new Map<string, Promise<{ profile?: User; conversation?: Conversation }>>();
+// Cache of userId → displayName, populated from friends, group members, and
+// getUserInfo calls. Used to resolve sender names in group messages where
+// dName is often empty.
+const userNameCache = new Map<string, string>();
 let persistTimer: NodeJS.Timeout | null = null;
 
 function createZalo() {
@@ -499,10 +503,15 @@ async function hydrateUserConversation(userId: string, emit = true) {
     const profile = profileFromUserInfo(info, userId);
     if (!profile) return { conversation: before };
 
+    const resolvedName = profile.displayName || profile.zaloName || userId;
+    if (resolvedName && resolvedName !== userId) {
+      userNameCache.set(userId, resolvedName);
+    }
+
     const conversation = mergeConversation({
       id: userId,
       type: "user",
-      name: profile.displayName || profile.zaloName || userId,
+      name: resolvedName,
       avatar: profile.avatar,
       raw: profile,
     }, { preferIncomingName: true });
@@ -757,12 +766,25 @@ function normalizeIncoming(message: Message): ChatMessage {
   const type = threadKind(message.type);
   const rawSenderId = String(data.uidFrom ?? "");
   const isSelf = Boolean(message.isSelf) || rawSenderId === "0" || (Boolean(selfId) && rawSenderId === selfId);
+  const senderId = isSelf && rawSenderId === "0" ? selfId : rawSenderId;
+
+  // Resolve sender name: prefer dName from the message, fall back to cache,
+  // then to the conversation name (for 1-1), then to the raw ID.
+  let senderName = String(data.dName ?? "").trim();
+  if (!senderName && senderId) {
+    senderName = userNameCache.get(senderId) || conversations.get(senderId)?.name || "";
+  }
+  // If still empty and it's a group message, try async hydration (fire-and-forget)
+  if (!senderName && senderId && type === "group" && zaloApi && !userHydrationInFlight.has(senderId)) {
+    void hydrateUserName(senderId);
+  }
+
   return {
     id: String(data.msgId ?? data.cliMsgId ?? `${message.threadId}-${Date.now()}`),
     threadId: String(message.threadId),
     type,
-    senderId: isSelf && rawSenderId === "0" ? selfId : rawSenderId,
-    senderName: String(data.dName ?? ""),
+    senderId,
+    senderName: senderName || senderId,
     text: pickText(data.content),
     timestamp: Number(data.ts ?? Date.now()),
     isSelf,
@@ -770,6 +792,34 @@ function normalizeIncoming(message: Message): ChatMessage {
     attachments: pickAttachments(data.content),
     raw: message,
   };
+}
+
+/**
+ * Fire-and-forget: resolve a user's display name and cache it. Also backfills
+ * any messages in the cache that have this userId as senderId with a bare ID
+ * as their senderName.
+ */
+async function hydrateUserName(userId: string) {
+  if (!zaloApi || !userId || userNameCache.has(userId)) return;
+  try {
+    const info = await zaloApi.getUserInfo(userId, AvatarSize.Large);
+    const profile = profileFromUserInfo(info, userId);
+    if (!profile) return;
+    const name = profile.displayName || profile.zaloName || "";
+    if (!name) return;
+    userNameCache.set(userId, name);
+    // Backfill cached messages that show the raw ID instead of a name
+    for (const [, list] of messages) {
+      for (const msg of list) {
+        if (msg.senderId === userId && (msg.senderName === userId || !msg.senderName)) {
+          msg.senderName = name;
+        }
+      }
+    }
+    schedulePersist();
+  } catch {
+    // Ignore — we'll try again next time
+  }
 }
 
 function applyUndo(undo: { threadId: string; msgId?: string | number; cliMsgId?: string | number }) {
@@ -1298,10 +1348,12 @@ app.get("/api/friends", async (_req, res) => {
     await saveFriendsCache(friends);
   }
   for (const friend of friends) {
+    const name = friend.displayName || friend.zaloName || String(friend.userId);
+    userNameCache.set(String(friend.userId), name);
     mergeConversation({
       id: String(friend.userId),
       type: "user",
-      name: friend.displayName || friend.zaloName || String(friend.userId),
+      name,
       avatar: friend.avatar,
       raw: friend,
     }, { preferIncomingName: true });
@@ -1391,9 +1443,14 @@ app.get("/api/groups/:groupId", async (req, res) => {
   const memberProfiles = limitedMemberIds.map((id) => {
     const profile = profiles[id];
     const fallback = currentMembers.find((member) => member.id === id);
+    const displayName = profile?.displayName || fallback?.displayName || id;
+    // Populate name cache so future group messages show names instead of IDs
+    if (displayName && displayName !== id) {
+      userNameCache.set(id, displayName);
+    }
     return {
       id,
-      displayName: profile?.displayName || fallback?.displayName || id,
+      displayName,
       zaloName: profile?.zaloName || fallback?.zaloName || "",
       avatar: profile?.avatar || fallback?.avatar || "",
       accountStatus: profile?.accountStatus ?? fallback?.accountStatus,
@@ -2045,6 +2102,14 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 async function bootstrap() {
   await mkdir(UPLOAD_DIR, { recursive: true });
   await loadLocalState();
+  // Populate name cache from friends cache so group messages show names on boot
+  const cachedFriends = await loadFriendsCache();
+  for (const friend of cachedFriends) {
+    const name = friend.displayName || friend.zaloName || "";
+    if (name && name !== String(friend.userId)) {
+      userNameCache.set(String(friend.userId), name);
+    }
+  }
   await restoreSession();
 
   server.listen(PORT, () => {
