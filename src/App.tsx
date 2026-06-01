@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, FileUp, Info, LogOut, MessageCircle, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
+import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, CreditCard, FileUp, Info, LogOut, MessageCircle, Mic, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { subscribeSocket } from './socket'
@@ -14,6 +14,8 @@ import GroupMembersModal from './GroupMembersModal'
 import StickerPicker from './StickerPicker'
 import RemindersPanel from './RemindersPanel'
 import AutoReplyPanel from './AutoReplyPanel'
+import BankCardForm from './BankCardForm'
+import VoiceRecorder from './VoiceRecorder'
 import { parseStyles, applyFormatting } from './formatting'
 import './App.css'
 
@@ -355,6 +357,8 @@ function App() {
   const [showStickers, setShowStickers] = useState(false)
   const [showReminders, setShowReminders] = useState(false)
   const [showAutoReply, setShowAutoReply] = useState(false)
+  const [showBankCard, setShowBankCard] = useState(false)
+  const [recordingVoice, setRecordingVoice] = useState(false)
   // @mention picker state for group composer
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)  // null = closed; "" or "alice" when active
   // Collected mentions {pos, uid, len} for the current draft, sent with the message
@@ -1801,6 +1805,14 @@ function App() {
                 <button type="button" className="formatBtn" onClick={() => wrapFormat('~~')} title="Gạch ngang"><s>S</s></button>
                 <small className="formatHint">**đậm** *nghiêng* __gạch chân__ ~~gạch ngang~~</small>
               </div>
+              {recordingVoice && selected && (
+                <VoiceRecorder
+                  threadId={selected.id}
+                  threadType={selected.type}
+                  onSent={() => { setRecordingVoice(false); setNotice('Đã gửi voice') }}
+                  onCancel={() => setRecordingVoice(false)}
+                />
+              )}
               <form className="composeRow" onSubmit={(event) => {
                 event.preventDefault()
                 sendMessage()
@@ -1808,6 +1820,8 @@ function App() {
                 <input ref={fileInput} type="file" multiple hidden onChange={(event) => addQueuedFiles(event.target.files ?? [], 'picker')} />
                 <button type="button" className="attachButton" onClick={() => fileInput.current?.click()} title="Đính kèm file"><Paperclip size={18} /></button>
                 <button type="button" className="attachButton" onClick={() => setShowStickers(!showStickers)} title="Sticker"><Smile size={18} /></button>
+                <button type="button" className="attachButton" onClick={() => setRecordingVoice(true)} title="Ghi âm"><Mic size={18} /></button>
+                <button type="button" className="attachButton" onClick={() => setShowBankCard(true)} title="Gửi STK ngân hàng"><CreditCard size={18} /></button>
                 <textarea ref={composerRef} value={text} disabled={sending} onPaste={handleComposerPaste} onChange={(event) => updateText(event.target.value)} placeholder="Nhập tin nhắn..." onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
@@ -1865,6 +1879,14 @@ function App() {
       )}
       {showAutoReply && (
         <AutoReplyPanel onClose={() => setShowAutoReply(false)} />
+      )}
+      {showBankCard && selected && (
+        <BankCardForm
+          threadId={selected.id}
+          threadType={selected.type}
+          onSent={() => { setShowBankCard(false); setNotice('Đã gửi STK') }}
+          onClose={() => setShowBankCard(false)}
+        />
       )}
       {showChannelPicker && selectedCategory && (() => {
         const currentCategory = categories.find((c) => c.id === selectedCategory)

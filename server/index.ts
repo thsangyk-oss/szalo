@@ -18,6 +18,7 @@ import { CloudflaredManager } from "./cloudflared";
 import { CategoryStore } from "./categories";
 import {
   AvatarSize,
+  BinBankCard,
   LoginQRCallbackEventType,
   MuteAction,
   MuteDuration,
@@ -1740,6 +1741,85 @@ app.post("/api/messages/sticker", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: errorMessage(error) });
   }
+});
+
+// === Send card (share user profile) ===
+app.post("/api/messages/card", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, userId, phoneNumber } = req.body as {
+    threadId?: string; type?: unknown; userId?: string; phoneNumber?: string;
+  };
+  if (!threadId || !isThreadKind(type) || !userId) {
+    res.status(400).json({ error: "Cần threadId, type, userId" });
+    return;
+  }
+  try {
+    const result = await zaloApi.sendCard({ userId, phoneNumber }, threadId, asThreadType(type));
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Send bank card (Vietnam bank account info) ===
+app.post("/api/messages/bank-card", async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const { threadId, type, binBank, numAccBank, nameAccBank } = req.body as {
+    threadId?: string; type?: unknown; binBank?: number; numAccBank?: string; nameAccBank?: string;
+  };
+  if (!threadId || !isThreadKind(type) || !binBank || !numAccBank?.trim()) {
+    res.status(400).json({ error: "Cần threadId, type, binBank, numAccBank" });
+    return;
+  }
+  try {
+    const result = await zaloApi.sendBankCard({
+      binBank: binBank as Parameters<typeof zaloApi.sendBankCard>[0]["binBank"],
+      numAccBank: numAccBank.trim(),
+      nameAccBank: nameAccBank?.trim(),
+    }, threadId, asThreadType(type));
+    res.json({ ok: true, result });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Send voice message ===
+// Client uploads the audio file (multipart/form-data field "voice"); we
+// re-host it under /downloads and pass the public URL to zca-js.sendVoice.
+app.post("/api/messages/voice", upload.single("voice"), async (req, res) => {
+  if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
+  const file = req.file as Express.Multer.File | undefined;
+  const { threadId, type } = req.body as { threadId?: string; type?: unknown };
+  if (!file) {
+    res.status(400).json({ error: "Cần file âm thanh" });
+    return;
+  }
+  if (!threadId || !isThreadKind(type)) {
+    await unlink(file.path).catch(() => undefined);
+    res.status(400).json({ error: "Cần threadId, type" });
+    return;
+  }
+  try {
+    // Build a public URL for the uploaded file. zca-js downloads the audio
+    // from this URL and reuploads to Zalo's CDN, so it must be reachable
+    // from the Internet — for local-only setups consider proxying via the
+    // Cloudflare tunnel.
+    const host = req.get("x-forwarded-host") || req.get("host") || `localhost:${PORT}`;
+    const proto = req.get("x-forwarded-proto") || (req.secure ? "https" : "http");
+    const voiceUrl = `${proto}://${host}/downloads/${path.basename(file.path)}`;
+    const result = await zaloApi.sendVoice({ voiceUrl }, threadId, asThreadType(type));
+    res.json({ ok: true, result, voiceUrl });
+  } catch (error) {
+    res.status(500).json({ error: errorMessage(error) });
+  }
+});
+
+// === Bank list (BinBankCard enum exposed for client form) ===
+app.get("/api/bank-bins", (_req, res) => {
+  // Re-export as JSON so the client can build a dropdown without bundling zca-js.
+  res.json(Object.entries(BinBankCard)
+    .filter(([, value]) => typeof value === "number")
+    .map(([name, value]) => ({ name, bin: value })));
 });
 
 app.get("/api/stickers", async (req, res) => {
