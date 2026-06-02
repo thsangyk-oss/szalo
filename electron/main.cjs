@@ -62,6 +62,7 @@ let bubbleThreads = [] // [{threadId, type, name, avatar}]
 let bubbleDockDragTimer = null
 let bubbleDockDragOffset = null
 let bubbleDockDragTimeout = null
+const rendererRecoveryState = new WeakMap()
 
 function getRendererBuildDir() {
   // In dev, we use the live Vite server (DEV_URL).
@@ -309,6 +310,23 @@ function attachWindowDiagnostics(window, name) {
 
   window.webContents.on('render-process-gone', (_event, details) => {
     logToFile('RENDER_PROCESS_GONE', name, details)
+    const now = Date.now()
+    const current = rendererRecoveryState.get(window)
+    const state = current && now - current.firstAt < 30000
+      ? { firstAt: current.firstAt, count: current.count + 1 }
+      : { firstAt: now, count: 1 }
+    rendererRecoveryState.set(window, state)
+
+    if (state.count <= 2 && !window.isDestroyed()) {
+      logToFile('RENDERER_AUTO_RECOVERY', name, { attempt: state.count, reason: details?.reason })
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          loadRenderer(window)
+        }
+      }, 700)
+      return
+    }
+
     showRendererLoadError(window, 'Szalo renderer crashed', JSON.stringify(details, null, 2))
   })
 }
