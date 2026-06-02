@@ -73,6 +73,16 @@ type Conversation = {
   pinned?: boolean
 }
 
+type ZaloContact = {
+  id?: string | number
+  userId?: string | number
+  displayName?: string
+  zaloName?: string
+  avatar?: string
+  phoneNumber?: string | number
+  status?: string
+}
+
 type ChatMessage = {
   id: string
   threadId: string
@@ -278,6 +288,39 @@ function groupConversationsFirst(list: Conversation[]) {
     .map(({ conversation }) => conversation)
 }
 
+function sortConversationsByLatest(list: Conversation[]) {
+  return list
+    .map((conversation, index) => ({ conversation, index }))
+    .sort((a, b) => {
+      const aTime = a.conversation.lastTimestamp ?? 0
+      const bTime = b.conversation.lastTimestamp ?? 0
+      if (aTime !== bTime) return bTime - aTime
+      if ((a.conversation.unread ?? 0) !== (b.conversation.unread ?? 0)) return (b.conversation.unread ?? 0) - (a.conversation.unread ?? 0)
+      return a.index - b.index
+    })
+    .map(({ conversation }) => conversation)
+}
+
+function contactId(contact: ZaloContact) {
+  return String(contact.userId ?? contact.id ?? '')
+}
+
+function contactName(contact: ZaloContact) {
+  return contact.displayName || contact.zaloName || contactId(contact)
+}
+
+function sortContacts(list: ZaloContact[]) {
+  const seen = new Set<string>()
+  return list
+    .filter((contact) => {
+      const id = contactId(contact)
+      if (!id || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    .sort((a, b) => contactName(a).localeCompare(contactName(b), 'vi', { sensitivity: 'base' }))
+}
+
 function messageNotificationTitle(message: ChatMessage, conversation?: Conversation) {
   if (conversation?.name) return conversation.name
   return message.senderName || message.threadId
@@ -363,9 +406,11 @@ function App() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [status, setStatus] = useState<Status>({ state: 'offline', account: null, selfId: '', qrImage: '', error: '' })
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [contacts, setContacts] = useState<ZaloContact[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [selected, setSelected] = useState<Conversation | null>(null)
   const [filter, setFilter] = useState('')
+  const [contactFilter, setContactFilter] = useState('')
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>('all')
   const [messageFilter, setMessageFilter] = useState('')
   const [text, setText] = useState('')
@@ -373,6 +418,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showContacts, setShowContacts] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [opening, setOpening] = useState(false)
   const [sending, setSending] = useState(false)
@@ -397,6 +443,7 @@ function App() {
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [contactsLoading, setContactsLoading] = useState(false)
   const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null)
   const [groupDetailLoading, setGroupDetailLoading] = useState(false)
   const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
@@ -431,8 +478,26 @@ function App() {
       const matchesCategory = !selectedCategory || categories.find((c) => c.id === selectedCategory)?.threadIds.includes(item.id)
       return matchesType && matchesQuery && matchesCategory
     })
-    return groupConversationsFirst(matched)
+    return selectedCategory ? groupConversationsFirst(matched) : sortConversationsByLatest(matched)
   }, [conversationFilter, conversations, filter, selectedCategory, categories])
+
+  const filteredContacts = useMemo(() => {
+    const query = contactFilter.trim().toLowerCase()
+    return sortContacts(contacts).filter((contact) => {
+      const id = contactId(contact)
+      const name = contactName(contact)
+      const phone = String(contact.phoneNumber ?? '')
+      return !query || name.toLowerCase().includes(query) || id.includes(query) || phone.includes(query)
+    })
+  }, [contactFilter, contacts])
+
+  const userConversationById = useMemo(() => {
+    const map = new Map<string, Conversation>()
+    for (const conversation of conversations) {
+      if (conversation.type === 'user') map.set(conversation.id, conversation)
+    }
+    return map
+  }, [conversations])
 
   const userCount = conversations.filter((item) => item.type === 'user').length
   const groupCount = conversations.filter((item) => item.type === 'group').length
@@ -752,6 +817,9 @@ function App() {
       setSelected(null)
       setMessages([])
       setConversations([])
+      setContacts([])
+      setContactFilter('')
+      setShowContacts(false)
       setHealth(null)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error))
@@ -804,13 +872,36 @@ function App() {
     }
   }
 
+  async function loadContacts(showDoneNotice = true) {
+    setContactsLoading(true)
+    try {
+      const data = await apiJson<ZaloContact[]>('/api/friends?pages=all')
+      const normalized = sortContacts(Array.isArray(data) ? data : [])
+      setContacts(normalized)
+      const list = await apiJson<Conversation[]>('/api/conversations')
+      setConversations(list)
+      if (showDoneNotice) setNotice(`Đã tải ${normalized.length} liên hệ`)
+      return normalized
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+      return []
+    } finally {
+      setContactsLoading(false)
+    }
+  }
+
   async function syncContacts() {
     setSyncing(true)
+    setContactsLoading(true)
     try {
       const results = await Promise.allSettled([
-        apiJson('/api/friends'),
+        apiJson<ZaloContact[]>('/api/friends?pages=all'),
         apiJson('/api/groups'),
       ])
+      const friendsResult = results[0]
+      if (friendsResult.status === 'fulfilled') {
+        setContacts(sortContacts(Array.isArray(friendsResult.value) ? friendsResult.value : []))
+      }
       const list = await apiJson<Conversation[]>('/api/conversations')
       setConversations(list)
       const failed = results.filter((result) => result.status === 'rejected')
@@ -819,7 +910,16 @@ function App() {
       setNotice(error instanceof Error ? error.message : String(error))
     } finally {
       setSyncing(false)
+      setContactsLoading(false)
     }
+  }
+
+  function openContactConversation(contact: ZaloContact) {
+    const id = contactId(contact)
+    if (!id) return
+    const existing = userConversationById.get(id)
+    const target = existing ?? { id, type: 'user' as ThreadKind, name: contactName(contact), avatar: contact.avatar, unread: 0 }
+    openConversation(target as Conversation)
   }
 
   async function openConversation(conversation: Conversation, refresh = false) {
@@ -1248,9 +1348,20 @@ function App() {
       {/* === ICON RAIL === */}
       <nav className="iconRail">
         <img className="appLogo" src="./szalo-icon.png" alt="Szalo" />
-        <button className={!showCategoryManager && !showNotifications && !showDiagnostics && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setSelectedCategory(null); setConversationFilter('all') }} title="Tất cả chat">
+        <button className={!showCategoryManager && !showNotifications && !showDiagnostics && !showContacts && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); setSelectedCategory(null); setConversationFilter('all') }} title="Tất cả chat">
           <MessageCircle size={20} />
           {unreadCount > 0 && <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+        </button>
+        <button className={showContacts ? 'railButton active' : 'railButton'} onClick={() => {
+          setShowContacts(true)
+          setShowCategoryManager(false)
+          setShowNotifications(false)
+          setShowDiagnostics(false)
+          setSelectedCategory(null)
+          setConversationFilter('all')
+          if (status.state === 'online' && contacts.length === 0 && !contactsLoading) void loadContacts(false)
+        }} title="Danh bạ">
+          <Users size={20} />
         </button>
 
         {/* Workspaces (Discord-style) */}
@@ -1260,8 +1371,8 @@ function App() {
           return (
             <button
               key={cat.id}
-              className={selectedCategory === cat.id && !showCategoryManager && !showNotifications && !showDiagnostics ? 'railWorkspace active' : 'railWorkspace'}
-              onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setSelectedCategory(cat.id); setConversationFilter('all') }}
+              className={selectedCategory === cat.id && !showCategoryManager && !showNotifications && !showDiagnostics && !showContacts ? 'railWorkspace active' : 'railWorkspace'}
+              onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); setSelectedCategory(cat.id); setConversationFilter('all') }}
               title={cat.name}
               style={{ '--workspace-color': cat.color } as React.CSSProperties}
             >
@@ -1276,7 +1387,7 @@ function App() {
         <button className={showNotifications ? 'railButton active' : 'railButton'} onClick={() => {
           const next = !showNotifications
           setShowNotifications(next)
-          if (next) { setShowCategoryManager(false); setShowDiagnostics(false); setNotifications((items) => items.map((item) => ({ ...item, read: true }))) }
+          if (next) { setShowCategoryManager(false); setShowDiagnostics(false); setShowContacts(false); setNotifications((items) => items.map((item) => ({ ...item, read: true }))) }
         }} title="Thông báo">
           <Bell size={20} />
           {unreadNotificationCount > 0 && <span className="badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>}
@@ -1284,14 +1395,14 @@ function App() {
         <button className={showCategoryManager ? 'railButton active' : 'railButton'} onClick={() => {
           const next = !showCategoryManager
           setShowCategoryManager(next)
-          if (next) { setShowNotifications(false); setShowDiagnostics(false) }
+          if (next) { setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false) }
         }} title="Quản lý phân loại">
           <Tag size={20} />
         </button>
         <button className={showDiagnostics ? 'railButton active' : 'railButton'} onClick={() => {
           const next = !showDiagnostics
           setShowDiagnostics(next)
-          if (next) { setShowNotifications(false); setShowCategoryManager(false); void loadDiagnostics() }
+          if (next) { setShowNotifications(false); setShowCategoryManager(false); setShowContacts(false); void loadDiagnostics() }
         }} title="Chẩn đoán">
           <Activity size={20} />
         </button>
@@ -1322,7 +1433,12 @@ function App() {
       <aside className="sidebar">
         <header className="brand">
           <div className="brandText">
-            {selectedCategory && !showCategoryManager && !showNotifications && !showDiagnostics ? (
+            {showContacts ? (
+              <>
+                <h1>Danh bạ</h1>
+                <p>{contactsLoading ? 'Đang tải liên hệ' : `${contacts.length} liên hệ`}</p>
+              </>
+            ) : selectedCategory && !showCategoryManager && !showNotifications && !showDiagnostics ? (
               <>
                 <h1 className="workspaceName">
                   <span className="workspaceColor" style={{ background: categories.find((c) => c.id === selectedCategory)?.color }} />
@@ -1420,6 +1536,55 @@ function App() {
               </>
             ) : (
               <small>{diagnosticsLoading ? 'Đang đọc...' : 'Bấm refresh để đọc'}</small>
+            )}
+          </section>
+        ) : showContacts ? (
+          <section className="contactsPanel">
+            <header>
+              <strong>Danh bạ Zalo</strong>
+              <button type="button" onClick={() => loadContacts()} disabled={contactsLoading} title="Tải lại danh bạ">
+                <RefreshCw size={14} />
+              </button>
+            </header>
+            <label className="search contactSearch">
+              <Search size={16} />
+              <input value={contactFilter} onChange={(event) => setContactFilter(event.target.value)} placeholder="Tìm liên hệ, số điện thoại, ID" />
+            </label>
+            <div className="contactsSummary">
+              <span>{filteredContacts.length} / {contacts.length} liên hệ</span>
+              {contactsLoading && <small>Đang tải...</small>}
+            </div>
+            {contactsLoading && contacts.length === 0 ? (
+              <div className="emptyState">
+                <RefreshCw size={28} />
+                <p>Đang tải danh bạ</p>
+              </div>
+            ) : filteredContacts.length === 0 ? (
+              <div className="emptyState">
+                <Users size={28} />
+                <p>Không có liên hệ</p>
+                <small>{contactFilter ? 'Thử từ khóa khác' : 'Bấm tải lại danh bạ để đồng bộ'}</small>
+              </div>
+            ) : (
+              <div className="contactList">
+                {filteredContacts.map((contact) => {
+                  const id = contactId(contact)
+                  const name = contactName(contact)
+                  const conversation = userConversationById.get(id)
+                  return (
+                    <button key={id} type="button" className={selected?.type === 'user' && selected.id === id ? 'contactItem active' : 'contactItem'} onClick={() => openContactConversation(contact)}>
+                      <span className="avatar contactAvatar" style={!contact.avatar ? { background: avatarGradient(id) } : undefined}>
+                        {contact.avatar ? <img src={contact.avatar} alt="" /> : name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="contactText">
+                        <strong>{name}</strong>
+                        <small>{contact.phoneNumber || id}</small>
+                      </span>
+                      {conversation?.unread ? <span className="badge">{conversation.unread > 99 ? '99+' : conversation.unread}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
             )}
           </section>
         ) : showCategoryManager ? (
@@ -1639,6 +1804,7 @@ function App() {
                           setShowCategoryManager(true)
                           setShowNotifications(false)
                           setShowDiagnostics(false)
+                          setShowContacts(false)
                         }}>
                           <Tag size={15} />
                           <span>Thêm vào kênh</span>

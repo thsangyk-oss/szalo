@@ -747,6 +747,119 @@ textarea:disabled {
   color: var(--text-muted);
 }
 
+/* ===== CONTACTS PANEL ===== */
+.contactsPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tertiary);
+}
+
+.contactsPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.contactsPanel header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.contactsPanel header button:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.contactsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.contactList {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.contactItem {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.contactItem:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+}
+
+.contactItem.active {
+  background: var(--accent-dim);
+  border-color: rgba(20, 184, 166, 0.3);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.contactItem:active {
+  transform: scale(0.98);
+}
+
+.contactAvatar {
+  flex-shrink: 0;
+}
+
+.contactText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.contactText strong,
+.contactText small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contactText strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contactText small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .emptyState {
   display: flex;
   flex-direction: column;

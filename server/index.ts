@@ -909,6 +909,26 @@ async function saveFriendsCache(friends: User[]) {
   await writeFile(FRIENDS_CACHE_FILE, JSON.stringify(friends), "utf8");
 }
 
+function friendPageLimit(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw === "string" && raw.trim().toLowerCase() === "all") return 100;
+  const parsed = typeof raw === "string" || typeof raw === "number" ? Number(raw) : Number.NaN;
+  if (!Number.isFinite(parsed)) return 100;
+  return Math.max(1, Math.min(Math.floor(parsed), 100));
+}
+
+function uniqueFriends(friends: User[]) {
+  const seen = new Set<string>();
+  const unique: User[] = [];
+  for (const friend of friends) {
+    const id = String(friend.userId ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    unique.push(friend);
+  }
+  return unique;
+}
+
 async function loadFriendsCache() {
   try {
     const raw = await readFile(FRIENDS_CACHE_FILE, "utf8");
@@ -1380,24 +1400,32 @@ app.post("/api/logout", async (req, res) => {
 app.get("/api/friends", async (_req, res) => {
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   const pageSize = 200;
-  const maxPages = Math.max(1, Math.min(Number(_req.query.pages ?? 1), 10));
+  const maxPages = friendPageLimit(_req.query.pages ?? "all");
   const friends: User[] = [];
   let warning = "";
+  let stoppedByLastPage = false;
   try {
     for (let page = 1; page <= maxPages; page += 1) {
       if (page > 1) await delay(800);
       const batch = (await zaloApi.getAllFriends(pageSize, page, AvatarSize.Large)) as User[];
       friends.push(...batch);
-      if (batch.length < pageSize) break;
+      if (batch.length < pageSize) {
+        stoppedByLastPage = true;
+        break;
+      }
     }
   } catch (error) {
     warning = errorMessage(error);
     if (friends.length === 0) friends.push(...await loadFriendsCache());
   }
-  if (friends.length > 0) {
-    await saveFriendsCache(friends);
+  const unique = uniqueFriends(friends);
+  if (!warning && !stoppedByLastPage && unique.length >= pageSize * maxPages) {
+    warning = `Reached friends page limit (${maxPages}); raise the server limit if contacts are still missing.`;
   }
-  for (const friend of friends) {
+  if (unique.length > 0) {
+    await saveFriendsCache(unique);
+  }
+  for (const friend of unique) {
     const name = friend.displayName || friend.zaloName || String(friend.userId);
     userNameCache.set(String(friend.userId), name);
     mergeConversation({
@@ -1411,7 +1439,7 @@ app.get("/api/friends", async (_req, res) => {
   schedulePersist();
   io.emit("conversations", sortedConversations());
   if (warning) res.setHeader("X-Zalo-Warning", warning);
-  res.json(friends);
+  res.json(unique);
 });
 
 app.get("/api/groups", async (_req, res) => {
