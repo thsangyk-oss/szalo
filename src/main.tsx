@@ -8,6 +8,8 @@ const hash = window.location.hash
 
 let content
 if (hash.startsWith('#/bubble-dock')) {
+  document.documentElement.classList.add('bubbleDockPage')
+  document.body.classList.add('bubbleDockPage')
   content = <BubbleDock />
 } else if (hash.startsWith('#/bubble-panel')) {
   content = <BubblePanel />

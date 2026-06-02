@@ -7,7 +7,8 @@ html, body, #root {
   background: transparent;
 }
 
-html.bubbleDockPage {
+html.bubbleDockPage,
+:root.bubbleDockPage {
   width: 72px !important;
   height: 72px !important;
   min-width: 72px;
@@ -16,6 +17,7 @@ html.bubbleDockPage {
   max-height: 72px;
   overflow: hidden;
   background: transparent !important;
+  background-color: transparent !important;
 }
 
 body.bubbleDockPage,
@@ -30,6 +32,7 @@ body.bubbleDockPage #root {
   max-height: 72px;
   background: transparent !important;
   background-color: transparent !important;
+  color-scheme: dark;
 }
 
 body.bubbleDockPage .dockRoot {
@@ -43,6 +46,8 @@ body.bubbleDockPage .dockRoot {
   max-height: 72px;
   background: transparent !important;
   background-color: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
   overflow: hidden;
   contain: strict;
   isolation: isolate;
@@ -104,19 +109,29 @@ body.bubbleDockPage .dockRoot {
   position: absolute;
   left: 50%;
   top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   z-index: 3;
-  min-width: 30px;
-  height: 30px;
+  min-width: 32px;
+  height: 32px;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  background: #ff4d6a;
+  border: 2px solid rgba(255, 255, 255, 0.88);
+  background: linear-gradient(180deg, #ff5b73 0%, #e83d58 100%);
   color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 30px;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
   text-align: center;
-  padding: 0 7px;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+  letter-spacing: 0;
+  padding: 0 8px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(118, 9, 28, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .dockCount {
@@ -493,8 +508,8 @@ body.bubbleDockPage .dockRoot {
 }
 
 .dockBadge {
-  background: var(--danger);
-  border: 2px solid #0c0d0b;
+  background: linear-gradient(180deg, #ff5b73 0%, var(--danger) 100%);
+  border-color: rgba(255, 255, 255, 0.88);
 }
 
 .dockCount {
