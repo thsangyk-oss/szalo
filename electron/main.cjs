@@ -436,6 +436,15 @@ function createWindow() {
 
   loadRenderer(mainWindow)
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    sendMainWindowVisibility('load')
+  })
+
+  mainWindow.on('show', () => sendMainWindowVisibility('show'))
+  mainWindow.on('hide', () => sendMainWindowVisibility('hide'))
+  mainWindow.on('focus', () => sendMainWindowVisibility('focus'))
+  mainWindow.on('blur', () => sendMainWindowVisibility('blur'))
+
   // Open all external links (window.open / target=_blank) in user's default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -464,6 +473,15 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+}
+
+function sendMainWindowVisibility(reason) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('main-window-visibility', {
+    visible: mainWindow.isVisible(),
+    focused: mainWindow.isFocused(),
+    reason,
   })
 }
 

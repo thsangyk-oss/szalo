@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('open-thread', listener)
   },
 
+  onMainWindowVisibility: (callback) => {
+    const listener = (_event, data) => callback(data)
+    ipcRenderer.on('main-window-visibility', listener)
+    return () => ipcRenderer.removeListener('main-window-visibility', listener)
+  },
+
   // Bubble chat - dock
   openBubble: (data) => {
     ipcRenderer.send('open-bubble', data)

@@ -26,6 +26,7 @@ const electron = (window as unknown as { electronAPI?: {
   flashFrame: () => void
   closeWindow?: () => void
   onOpenThread: (cb: (data: { threadId: string; type: string }) => void) => () => void
+  onMainWindowVisibility?: (cb: (data: { visible: boolean; focused: boolean; reason?: string }) => void) => () => void
   openBubble: (data: { threadId: string; type: string; name: string; avatar?: string }) => void
   openBubblePanel: () => void
   closeBubblePanel: () => void
@@ -406,6 +407,7 @@ function App() {
   const endRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const conversationsRef = useRef<Conversation[]>([])
+  const mainWindowVisibleRef = useRef(!document.hidden)
   // Threads whose history we've already force-refreshed this session, so we
   // only hit Zalo for fresh history on the first open of each thread.
   const refreshedThreadsRef = useRef<Set<string>>(new Set())
@@ -473,6 +475,46 @@ function App() {
   }, [conversations])
 
   useEffect(() => {
+    const selectedThreadIsVisible = () => mainWindowVisibleRef.current && !document.hidden
+    const markCurrentSelectedRead = () => {
+      if (!selectedThreadIsVisible()) return
+      const current = selectedRef.current
+      if (!current) return
+      setConversations((list) => markConversationRead(list, current.id))
+      apiJson('/api/events/seen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: current.id, type: current.type }),
+      }).catch(() => undefined)
+    }
+    const handleDocumentVisibility = () => {
+      if (!electron) mainWindowVisibleRef.current = !document.hidden
+      markCurrentSelectedRead()
+    }
+    const handleWindowFocus = () => {
+      if (!electron) mainWindowVisibleRef.current = true
+      markCurrentSelectedRead()
+    }
+    const handleWindowBlur = () => {
+      if (!electron) mainWindowVisibleRef.current = !document.hidden
+    }
+    const cleanupVisibility = electron?.onMainWindowVisibility?.((state) => {
+      mainWindowVisibleRef.current = Boolean(state.visible)
+      markCurrentSelectedRead()
+    })
+
+    document.addEventListener('visibilitychange', handleDocumentVisibility)
+    window.addEventListener('focus', handleWindowFocus)
+    window.addEventListener('blur', handleWindowBlur)
+    return () => {
+      cleanupVisibility?.()
+      document.removeEventListener('visibilitychange', handleDocumentVisibility)
+      window.removeEventListener('focus', handleWindowFocus)
+      window.removeEventListener('blur', handleWindowBlur)
+    }
+  }, [])
+
+  useEffect(() => {
     // Subscribe to the live socket. The socket module rebuilds it whenever
     // the user changes settings, so the App re-runs all socket-bound effects.
     return subscribeSocket((next) => {
@@ -495,20 +537,22 @@ function App() {
     }
     const handleConversations = (items: Conversation[]) => {
       const currentSelected = selectedRef.current
-      setConversations(currentSelected ? markConversationRead(items, currentSelected.id) : items)
+      const selectedThreadVisible = Boolean(currentSelected && mainWindowVisibleRef.current && !document.hidden)
+      setConversations(selectedThreadVisible && currentSelected ? markConversationRead(items, currentSelected.id) : items)
       // Sync selected with latest conversation data (name/avatar may change)
       if (currentSelected) {
         const updated = items.find((item) => item.id === currentSelected.id)
-        if (updated && (updated.name !== currentSelected.name || updated.avatar !== currentSelected.avatar)) {
-          setSelected({ ...updated, unread: 0, manualUnread: false })
+        if (updated && (updated.name !== currentSelected.name || updated.avatar !== currentSelected.avatar || selectedThreadVisible)) {
+          setSelected(selectedThreadVisible ? { ...updated, unread: 0, manualUnread: false } : updated)
         }
       }
     }
     const handleMessage = (message: ChatMessage) => {
       const currentSelected = selectedRef.current
-      const isOpenThread = currentSelected?.id === message.threadId
+      const isSelectedThread = currentSelected?.id === message.threadId
+      const isOpenThread = Boolean(isSelectedThread && mainWindowVisibleRef.current && !document.hidden)
       setMessages((current) => {
-        if (!isOpenThread) return current
+        if (!isSelectedThread) return current
         return appendMessage(current, message)
       })
       if (isOpenThread) {
@@ -521,7 +565,7 @@ function App() {
           }).catch(() => undefined)
         }
       }
-      if (!message.isSelf && (!isOpenThread || document.hidden)) {
+      if (!message.isSelf && !isOpenThread) {
         const conv = conversationsRef.current.find((c) => c.id === message.threadId)
         const isMuted = conv?.muted
         const title = messageNotificationTitle(message, conv)
