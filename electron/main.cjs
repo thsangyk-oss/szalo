@@ -2,6 +2,8 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, scre
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
+const crypto = require('crypto')
+const { fileURLToPath, pathToFileURL } = require('url')
 
 // Debug log file (always log to a known path, fallback to temp dir)
 const LOG_FILE = path.join(os.tmpdir(), 'szalo.log')
@@ -46,6 +48,9 @@ const WINDOW_ICON_PATH = process.platform === 'win32' && fs.existsSync(ICON_ICO_
 const TRAY_ICON_PATH = path.join(__dirname, 'tray-icon.png')
 const MAX_BUBBLES = 5
 const BUBBLE_DOCK_SIZE = 72
+const NOTIFICATION_AVATAR_SIZE = 96
+const MAX_NOTIFICATION_AVATAR_BYTES = 5 * 1024 * 1024
+const NOTIFICATION_AVATAR_TIMEOUT_MS = 3500
 
 let mainWindow = null
 let bubbleDockWindow = null
@@ -81,6 +86,189 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function notificationCacheDir() {
+  return path.join(app.getPath('userData'), 'notification-avatars')
+}
+
+function notificationIconCachePath(avatar) {
+  const hash = crypto.createHash('sha256').update(avatar).digest('hex').slice(0, 32)
+  return path.join(notificationCacheDir(), `${hash}.png`)
+}
+
+function createNativeImageFromDataUrl(dataUrl) {
+  try {
+    const image = nativeImage.createFromDataURL(dataUrl)
+    return image.isEmpty() ? null : image
+  } catch {
+    return null
+  }
+}
+
+async function createNativeImageFromRemoteUrl(url) {
+  if (typeof fetch !== 'function') return null
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), NOTIFICATION_AVATAR_TIMEOUT_MS)
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Szalo/1.0' },
+    })
+    if (!response.ok) return null
+
+    const contentLength = Number(response.headers.get('content-length') || 0)
+    if (contentLength > MAX_NOTIFICATION_AVATAR_BYTES) return null
+
+    const arrayBuffer = await response.arrayBuffer()
+    if (arrayBuffer.byteLength > MAX_NOTIFICATION_AVATAR_BYTES) return null
+
+    const image = nativeImage.createFromBuffer(Buffer.from(arrayBuffer))
+    return image.isEmpty() ? null : image
+  } catch (error) {
+    logToFile('NOTIFICATION_AVATAR_FETCH_FAILED', { url, error: error?.message || String(error) })
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function createNativeImageFromAvatar(avatar) {
+  const value = typeof avatar === 'string' ? avatar.trim() : ''
+  if (!value) return null
+
+  if (value.startsWith('data:image/')) {
+    return createNativeImageFromDataUrl(value)
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return createNativeImageFromRemoteUrl(value)
+  }
+
+  let filePath = value
+  if (value.startsWith('file://')) {
+    try {
+      filePath = fileURLToPath(value)
+    } catch {
+      return null
+    }
+  }
+  try {
+    const image = nativeImage.createFromPath(filePath)
+    return image.isEmpty() ? null : image
+  } catch {
+    return null
+  }
+}
+
+async function resolveNotificationAvatarIcon(avatar) {
+  const value = typeof avatar === 'string' ? avatar.trim() : ''
+  if (!value) return null
+
+  const cachePath = notificationIconCachePath(value)
+  if (fs.existsSync(cachePath)) return cachePath
+
+  const image = await createNativeImageFromAvatar(value)
+  if (!image) return null
+
+  const png = image.resize({
+    width: NOTIFICATION_AVATAR_SIZE,
+    height: NOTIFICATION_AVATAR_SIZE,
+    quality: 'best',
+  }).toPNG()
+  if (!png.length) return null
+
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true })
+  fs.writeFileSync(cachePath, png)
+  return cachePath
+}
+
+function createWindowsToastXml({ title, body, avatarIconPath }) {
+  const image = avatarIconPath
+    ? `<image placement="appLogoOverride" hint-crop="circle" src="${escapeXml(pathToFileURL(avatarIconPath).href)}" alt="${escapeXml(title || 'Szalo')}"/>`
+    : ''
+
+  return `
+<toast activationType="foreground">
+  <visual>
+    <binding template="ToastGeneric">
+      ${image}
+      <text>${escapeXml(title || 'Szalo')}</text>
+      <text>${escapeXml(body || '')}</text>
+    </binding>
+  </visual>
+  <audio src="ms-winsoundevent:Notification.Default"/>
+</toast>`.trim()
+}
+
+function focusThreadFromNotification(threadId, type) {
+  if (!mainWindow) return
+  mainWindow.show()
+  mainWindow.focus()
+  if (threadId) {
+    mainWindow.webContents.send('open-thread', { threadId, type })
+  }
+}
+
+function showStandardNotification(payload, iconPath = ICON_PATH) {
+  const notification = new Notification({
+    title: payload.title || 'Szalo',
+    body: payload.body || '',
+    icon: iconPath,
+    silent: false,
+    timeoutType: 'default',
+  })
+
+  notification.on('click', () => focusThreadFromNotification(payload.threadId, payload.type))
+  notification.show()
+  return notification
+}
+
+async function showNativeNotification(payload) {
+  if (!Notification.isSupported()) return
+
+  const normalized = {
+    title: typeof payload?.title === 'string' ? payload.title : 'Szalo',
+    body: typeof payload?.body === 'string' ? payload.body : '',
+    threadId: payload?.threadId,
+    type: payload?.type,
+    avatar: payload?.avatar,
+  }
+  const avatarIconPath = await resolveNotificationAvatarIcon(normalized.avatar)
+
+  if (process.platform !== 'win32' || !avatarIconPath) {
+    showStandardNotification(normalized, avatarIconPath || ICON_PATH)
+    return
+  }
+
+  let fallbackShown = false
+  const notification = new Notification({
+    toastXml: createWindowsToastXml({
+      title: normalized.title,
+      body: normalized.body,
+      avatarIconPath,
+    }),
+  })
+
+  notification.on('click', () => focusThreadFromNotification(normalized.threadId, normalized.type))
+  notification.on('failed', (_event, error) => {
+    logToFile('NOTIFICATION_TOAST_XML_FAILED', error || '')
+    if (!fallbackShown) {
+      fallbackShown = true
+      showStandardNotification(normalized, avatarIconPath)
+    }
+  })
+  notification.show()
 }
 
 function showRendererLoadError(window, title, details) {
@@ -475,27 +663,8 @@ function updateTrayMenu() {
 
 // === IPC Handlers ===
 
-ipcMain.on('notification', (_event, { title, body, threadId, type }) => {
-  if (!Notification.isSupported()) return
-
-  const notification = new Notification({
-    title: title || 'Szalo',
-    body: body || '',
-    icon: ICON_PATH,
-    silent: false,
-  })
-
-  notification.on('click', () => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-      if (threadId) {
-        mainWindow.webContents.send('open-thread', { threadId, type })
-      }
-    }
-  })
-
-  notification.show()
+ipcMain.on('notification', (_event, payload) => {
+  void showNativeNotification(payload)
 })
 
 ipcMain.on('unread-count', (_event, count) => {

@@ -21,7 +21,7 @@ import './App.css'
 
 // Electron bridge (available when running inside Electron shell)
 const electron = (window as unknown as { electronAPI?: {
-  sendNotification: (data: { title: string; body: string; threadId?: string; type?: string }) => void
+  sendNotification: (data: { title: string; body: string; threadId?: string; type?: string; avatar?: string }) => void
   setUnreadCount: (count: number) => void
   flashFrame: () => void
   closeWindow?: () => void
@@ -165,6 +165,7 @@ type AppNotification = {
   body: string
   threadId?: string
   type?: ThreadKind
+  avatar?: string
   read: boolean
 }
 
@@ -338,6 +339,23 @@ function avatarGradient(seed: string) {
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length]
 }
 
+function NotificationIcon({ item }: { item: AppNotification }) {
+  const [avatarFailed, setAvatarFailed] = useState(false)
+  if (item.avatar && !avatarFailed) {
+    return (
+      <span className="notificationIcon hasAvatar" aria-hidden>
+        <img src={item.avatar} alt="" onError={() => setAvatarFailed(true)} />
+      </span>
+    )
+  }
+
+  return (
+    <span className="notificationIcon" aria-hidden>
+      {item.kind === 'message' ? <MessageCircle size={14} /> : item.kind === 'group' ? <Users size={14} /> : item.kind === 'friend' ? <Bell size={14} /> : <Activity size={14} />}
+    </span>
+  )
+}
+
 function App() {
   const [configured, setConfigured] = useState(isConfigured())
   const [showSettings, setShowSettings] = useState(false)
@@ -508,14 +526,15 @@ function App() {
         const isMuted = conv?.muted
         const title = messageNotificationTitle(message, conv)
         const body = messageNotificationBody(message, conv)
-        pushNotification({ kind: 'message', title, body, threadId: message.threadId, type: message.type })
+        const avatar = conv?.avatar
+        pushNotification({ kind: 'message', title, body, threadId: message.threadId, type: message.type, avatar })
         if (!isMuted) {
           setNotice(`${title}: ${body}`)
           if (electron) {
-            electron.sendNotification({ title, body, threadId: message.threadId, type: message.type })
+            electron.sendNotification({ title, body, threadId: message.threadId, type: message.type, avatar })
             electron.flashFrame()
           } else if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('Szalo', { body: `${title}: ${body}` })
+            new Notification(title, { body, icon: avatar })
           }
         }
       }
@@ -524,7 +543,8 @@ function App() {
       setMessages((current) => updateMessageStatus(current, event))
     }
     const handleGroupEvent = (event: { threadId?: string; type?: unknown }) => {
-      pushNotification({ kind: 'group', title: 'Cập nhật nhóm', body: 'Có thay đổi trong nhóm', threadId: event.threadId, type: event.threadId ? 'group' : undefined })
+      const conv = event.threadId ? conversationsRef.current.find((c) => c.id === event.threadId) : undefined
+      pushNotification({ kind: 'group', title: 'Cập nhật nhóm', body: 'Có thay đổi trong nhóm', threadId: event.threadId, type: event.threadId ? 'group' : undefined, avatar: conv?.avatar })
       setNotice('Có cập nhật trong nhóm')
     }
     const handleFriendEvent = () => {
@@ -1303,9 +1323,7 @@ function App() {
               <div className="notificationList">
                 {notifications.map((item) => (
                   <button key={item.id} type="button" className={item.read ? 'notificationItem' : 'notificationItem unread'} onClick={() => openNotification(item)}>
-                    <span className="notificationIcon" aria-hidden>
-                      {item.kind === 'message' ? <MessageCircle size={14} /> : item.kind === 'group' ? <Users size={14} /> : item.kind === 'friend' ? <Bell size={14} /> : <Activity size={14} />}
-                    </span>
+                    <NotificationIcon item={item} />
                     <div className="notificationBody">
                       <strong>{item.title}</strong>
                       <span>{item.body}</span>
