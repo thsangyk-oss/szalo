@@ -24,6 +24,7 @@ const electron = (window as unknown as { electronAPI?: {
   sendNotification: (data: { title: string; body: string; threadId?: string; type?: string }) => void
   setUnreadCount: (count: number) => void
   flashFrame: () => void
+  closeWindow?: () => void
   onOpenThread: (cb: (data: { threadId: string; type: string }) => void) => () => void
   openBubble: (data: { threadId: string; type: string; name: string; avatar?: string }) => void
   openBubblePanel: () => void
@@ -264,6 +265,17 @@ function markConversationRead(list: Conversation[], threadId: string) {
   return list.map((conversation) => conversation.id === threadId ? { ...conversation, unread: 0, manualUnread: false } : conversation)
 }
 
+function groupConversationsFirst(list: Conversation[]) {
+  return list
+    .map((conversation, index) => ({ conversation, index }))
+    .sort((a, b) => {
+      const aRank = a.conversation.type === 'group' ? 0 : 1
+      const bRank = b.conversation.type === 'group' ? 0 : 1
+      return aRank === bRank ? a.index - b.index : aRank - bRank
+    })
+    .map(({ conversation }) => conversation)
+}
+
 function messageNotificationTitle(message: ChatMessage, conversation?: Conversation) {
   if (conversation?.name) return conversation.name
   return message.senderName || message.threadId
@@ -393,12 +405,13 @@ function App() {
 
   const filteredConversations = useMemo(() => {
     const query = filter.trim().toLowerCase()
-    return conversations.filter((item) => {
+    const matched = conversations.filter((item) => {
       const matchesType = conversationFilter === 'all' || item.type === conversationFilter
       const matchesQuery = !query || item.name.toLowerCase().includes(query) || item.id.includes(query)
       const matchesCategory = !selectedCategory || categories.find((c) => c.id === selectedCategory)?.threadIds.includes(item.id)
       return matchesType && matchesQuery && matchesCategory
     })
+    return groupConversationsFirst(matched)
   }, [conversationFilter, conversations, filter, selectedCategory, categories])
 
   const userCount = conversations.filter((item) => item.type === 'user').length
@@ -1129,7 +1142,16 @@ function App() {
   }
 
   return (
-    <main className="shell">
+    <main className="appFrame">
+      {electron?.isElectron && (
+        <header className="windowTitlebar">
+          <div className="windowDrag" aria-hidden="true" />
+          <button type="button" className="windowControl close" onClick={() => electron.closeWindow?.()} title="Đóng cửa sổ" aria-label="Đóng cửa sổ">
+            <X size={15} />
+          </button>
+        </header>
+      )}
+      <section className="shell">
       {(!configured || showSettings) && (
         <SettingsScreen
           dismissible={configured}
@@ -1161,7 +1183,7 @@ function App() {
       )}
       {/* === ICON RAIL === */}
       <nav className="iconRail">
-        <img className="appLogo" src="/szalo-icon.png" alt="Szalo" />
+        <img className="appLogo" src="./szalo-icon.png" alt="Szalo" />
         <button className={!showCategoryManager && !showNotifications && !showDiagnostics && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setSelectedCategory(null); setConversationFilter('all') }} title="Tất cả chat">
           <MessageCircle size={20} />
           {unreadCount > 0 && <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
@@ -1418,32 +1440,6 @@ function App() {
               ) : selectedCategory ? (
                 // Discord-style: group by type within workspace
                 <>
-                  {filteredConversations.filter((c) => c.type === 'user').length > 0 && (
-                    <div className="channelSection">
-                      <div className="channelSectionHeader">
-                        <span>Cá nhân</span>
-                        <small>{filteredConversations.filter((c) => c.type === 'user').length}</small>
-                      </div>
-                      {filteredConversations.filter((c) => c.type === 'user').map((conversation) => (
-                        <button
-                          key={`${conversation.type}-${conversation.id}`}
-                          className={selected?.id === conversation.id ? 'conversation channel active' : 'conversation channel'}
-                          onClick={() => openConversation(conversation)}
-                        >
-                          <span className="channelHash">@</span>
-                          <span className="conversationText">
-                            <strong>{conversation.name}</strong>
-                            <small>
-                              {conversation.pinned && <Pin size={11} />}
-                              {conversation.muted && <BellOff size={11} />}
-                              {typingThreads[conversation.id] ? <em>Đang gõ...</em> : (conversation.lastMessage || ' ')}
-                            </small>
-                          </span>
-                          {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                   {filteredConversations.filter((c) => c.type === 'group').length > 0 && (
                     <div className="channelSection">
                       <div className="channelSectionHeader">
@@ -1457,6 +1453,32 @@ function App() {
                           onClick={() => openConversation(conversation)}
                         >
                           <span className="channelHash">#</span>
+                          <span className="conversationText">
+                            <strong>{conversation.name}</strong>
+                            <small>
+                              {conversation.pinned && <Pin size={11} />}
+                              {conversation.muted && <BellOff size={11} />}
+                              {typingThreads[conversation.id] ? <em>Đang gõ...</em> : (conversation.lastMessage || ' ')}
+                            </small>
+                          </span>
+                          {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {filteredConversations.filter((c) => c.type === 'user').length > 0 && (
+                    <div className="channelSection">
+                      <div className="channelSectionHeader">
+                        <span>Cá nhân</span>
+                        <small>{filteredConversations.filter((c) => c.type === 'user').length}</small>
+                      </div>
+                      {filteredConversations.filter((c) => c.type === 'user').map((conversation) => (
+                        <button
+                          key={`${conversation.type}-${conversation.id}`}
+                          className={selected?.id === conversation.id ? 'conversation channel active' : 'conversation channel'}
+                          onClick={() => openConversation(conversation)}
+                        >
+                          <span className="channelHash">@</span>
                           <span className="conversationText">
                             <strong>{conversation.name}</strong>
                             <small>
@@ -1991,26 +2013,6 @@ function App() {
                   </div>
                 ) : (
                   <>
-                    {usersC.length > 0 && (
-                      <>
-                        <div className="modalSectionHeader">Cá nhân ({usersC.length})</div>
-                        {usersC.map((c) => (
-                          <label key={c.id} className={pickerSelected.has(c.id) ? 'modalRow checked' : 'modalRow'}>
-                            <input type="checkbox" checked={pickerSelected.has(c.id)} onChange={() => {
-                              setPickerSelected((prev) => {
-                                const next = new Set(prev)
-                                if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
-                                return next
-                              })
-                            }} />
-                            <span className="avatar small" style={!c.avatar ? { background: avatarGradient(c.id) } : undefined}>
-                              {c.avatar ? <img src={c.avatar} alt="" /> : c.name.slice(0, 1).toUpperCase()}
-                            </span>
-                            <span className="modalRowText">{c.name}</span>
-                          </label>
-                        ))}
-                      </>
-                    )}
                     {groupsC.length > 0 && (
                       <>
                         <div className="modalSectionHeader">Nhóm ({groupsC.length})</div>
@@ -2031,6 +2033,26 @@ function App() {
                         ))}
                       </>
                     )}
+                    {usersC.length > 0 && (
+                      <>
+                        <div className="modalSectionHeader">Cá nhân ({usersC.length})</div>
+                        {usersC.map((c) => (
+                          <label key={c.id} className={pickerSelected.has(c.id) ? 'modalRow checked' : 'modalRow'}>
+                            <input type="checkbox" checked={pickerSelected.has(c.id)} onChange={() => {
+                              setPickerSelected((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
+                                return next
+                              })
+                            }} />
+                            <span className="avatar small" style={!c.avatar ? { background: avatarGradient(c.id) } : undefined}>
+                              {c.avatar ? <img src={c.avatar} alt="" /> : c.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="modalRowText">{c.name}</span>
+                          </label>
+                        ))}
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -2044,6 +2066,7 @@ function App() {
           </div>
         )
       })()}
+      </section>
     </main>
   )
 }

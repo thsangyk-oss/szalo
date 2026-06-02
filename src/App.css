@@ -1,8 +1,62 @@
 /* ===== SHELL LAYOUT ===== */
+.appFrame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.windowTitlebar {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex: 0 0 34px;
+  height: 34px;
+  background: #0c0d0b;
+  border-bottom: 1px solid var(--border-light);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.windowDrag {
+  flex: 1;
+  min-width: 0;
+}
+
+.windowControl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 34px;
+  border: 0;
+  border-left: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.windowControl:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.windowControl.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 68px 320px 1fr;
-  height: 100vh;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-primary);
   overflow: hidden;
 }
@@ -17,7 +71,7 @@
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-light);
   overflow-y: auto;
-  height: 100vh;
+  height: 100%;
 }
 
 .iconRail .appLogo {
@@ -156,7 +210,7 @@
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-light);
   overflow: hidden;
-  height: 100vh;
+  height: 100%;
 }
 
 .brand {
@@ -1011,7 +1065,7 @@ textarea:disabled {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   background: var(--bg-primary);
 }
@@ -3432,7 +3486,7 @@ span.fileAttachment {
   .shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(260px, 42vh) minmax(0, 1fr);
-    height: 100dvh;
+    height: 100%;
   }
 
   .sidebar {

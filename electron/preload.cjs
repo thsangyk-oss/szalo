@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('flash-frame')
   },
 
+  closeWindow: () => {
+    ipcRenderer.send('window-close')
+  },
+
   // Listen for open-thread from main (when user clicks notification)
   onOpenThread: (callback) => {
     const listener = (_event, data) => callback(data)

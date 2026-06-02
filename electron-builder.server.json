@@ -4,6 +4,7 @@
   "directories": {
     "output": "dist-server"
   },
+  "afterPack": "electron/after-pack-icons.cjs",
   "files": [
     "electron/server-main.cjs",
     "electron/server.cjs",

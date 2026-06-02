@@ -33,10 +33,16 @@ process.on('unhandledRejection', (reason) => {
 })
 
 app.disableHardwareAcceleration()
+app.setName('Szalo')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.szalo.app')
+}
 
 const isDev = process.env.NODE_ENV === 'development'
 const DEV_URL = process.env.SZALO_DEV_URL || 'http://localhost:5173'
 const ICON_PATH = path.join(__dirname, 'icon.png')
+const ICON_ICO_PATH = path.join(__dirname, 'icon.ico')
+const WINDOW_ICON_PATH = process.platform === 'win32' && fs.existsSync(ICON_ICO_PATH) ? ICON_ICO_PATH : ICON_PATH
 const TRAY_ICON_PATH = path.join(__dirname, 'tray-icon.png')
 const MAX_BUBBLES = 5
 const BUBBLE_DOCK_SIZE = 72
@@ -202,8 +208,11 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    icon: ICON_PATH,
+    icon: WINDOW_ICON_PATH,
     title: 'Szalo',
+    frame: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#10110f',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -213,6 +222,7 @@ function createWindow() {
   })
 
   attachWindowDiagnostics(mainWindow, 'main')
+  mainWindow.setMenuBarVisibility(false)
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
@@ -507,6 +517,13 @@ ipcMain.on('flash-frame', () => {
   }
 })
 
+ipcMain.on('window-close', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (window && !window.isDestroyed()) {
+    window.close()
+  }
+})
+
 // Bubble IPC
 ipcMain.on('open-bubble', (_event, data) => {
   const incoming = normalizeBubbleThread(data)
@@ -582,6 +599,7 @@ ipcMain.on('move-bubble-dock', (_event, { dx, dy }) => {
 app.on('ready', () => {
   logToFile('App ready, isDev:', isDev, 'devUrl:', DEV_URL)
   logToFile('Resource paths:', { app: app.getAppPath(), resources: process.resourcesPath })
+  Menu.setApplicationMenu(null)
   createWindow()
   createTray()
 })
