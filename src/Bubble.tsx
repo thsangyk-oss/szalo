@@ -112,6 +112,10 @@ function unreadByConversation(conversations: Conversation[]) {
   return map
 }
 
+function bubbleMessageWindowSize(unread: number) {
+  return Math.min(2000, Math.max(50, unread + 20))
+}
+
 // ===== BUBBLE DOCK: small 60x60 circle =====
 export function BubbleDock() {
   const [threads, setThreads] = useState<BubbleThread[]>((electron?.getBubbleThreads() ?? []).map(normalizeThread))
@@ -230,7 +234,11 @@ export function BubbleDock() {
   return (
     <div className="dockRoot">
       <div
-        className={isDragging ? 'dockCircle dragging' : 'dockCircle'}
+        className={[
+          'dockCircle',
+          isDragging ? 'dragging' : '',
+          totalUnread > 0 ? 'hasUnread' : '',
+        ].filter(Boolean).join(' ')}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -287,7 +295,9 @@ export function BubblePanel() {
     const handleConversations = (items: Conversation[]) => {
       if (items.length === 0) return
       const byId = new Map(items.map((item) => [item.id, item]))
-      setUnreadMap(unreadByConversation(items))
+      const nextUnread = unreadByConversation(items)
+      if (activeThread) nextUnread[activeThread.threadId] = 0
+      setUnreadMap(nextUnread)
       setThreads((current) => syncThreadsWithConversations(current, items))
       setActiveThread((current) => current ? applyConversationToThread(current, byId.get(current.threadId)) : current)
     }
@@ -296,7 +306,7 @@ export function BubblePanel() {
     return () => {
       socket.off('conversations', handleConversations)
     }
-  }, [socket])
+  }, [activeThread, socket])
 
   useEffect(() => {
     if (!socket) return
@@ -306,6 +316,14 @@ export function BubblePanel() {
           if (prev.some((m) => m.id === message.id)) return prev
           return [...prev, message]
         })
+        if (!message.isSelf) {
+          setUnreadMap((prev) => ({ ...prev, [activeThread.threadId]: 0 }))
+          apiJson('/api/events/seen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ threadId: activeThread.threadId, type: activeThread.type }),
+          }).catch(() => undefined)
+        }
       }
     }
     socket.on('message', handleMessage)
@@ -317,9 +335,12 @@ export function BubblePanel() {
   }, [messages])
 
   function openThread(thread: BubbleThread) {
+    const unreadBeforeOpen = unreadMap[thread.threadId] ?? 0
+    const windowSize = bubbleMessageWindowSize(unreadBeforeOpen)
+    const shouldRefresh = thread.type === 'group' && unreadBeforeOpen > 0
     setActiveThread(thread)
-    apiJson<ChatMessage[]>(`/api/messages/${thread.type}/${thread.threadId}`)
-      .then((data) => setMessages(Array.isArray(data) ? data.slice(-50) : []))
+    apiJson<ChatMessage[]>(`/api/messages/${thread.type}/${thread.threadId}${shouldRefresh ? '?refresh=1' : ''}`)
+      .then((data) => setMessages(Array.isArray(data) ? data.slice(-windowSize) : []))
       .catch(() => setMessages([]))
     apiJson('/api/events/seen', {
       method: 'POST',

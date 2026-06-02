@@ -83,34 +83,47 @@ body.bubbleDockPage .dockRoot {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  transition: filter 0.16s, opacity 0.16s, transform 0.16s;
 }
 
 .dockLetter {
   font-size: 20px;
   font-weight: 700;
   color: #7c5cff;
+  transition: filter 0.16s, opacity 0.16s, transform 0.16s;
+}
+
+.dockCircle.hasUnread .dockAvatar,
+.dockCircle.hasUnread .dockLetter {
+  filter: blur(3px) saturate(0.78) brightness(0.58);
+  opacity: 0.58;
+  transform: scale(1.05);
 }
 
 .dockBadge {
   position: absolute;
-  top: 0;
-  right: 0;
-  min-width: 18px;
-  height: 18px;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  min-width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
   background: #ff4d6a;
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 30px;
   text-align: center;
-  padding: 0 4px;
+  padding: 0 7px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
 }
 
 .dockCount {
   position: absolute;
   bottom: 0;
   right: 0;
+  z-index: 4;
   min-width: 16px;
   height: 16px;
   border-radius: 999px;
