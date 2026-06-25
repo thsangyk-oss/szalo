@@ -3,6 +3,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const crypto = require('crypto')
+const { spawn } = require('child_process')
 const { fileURLToPath, pathToFileURL } = require('url')
 
 // Debug log file (always log to a known path, fallback to temp dir)
@@ -212,6 +213,29 @@ function createWindowsToastXml({ title, body, avatarIconPath }) {
 </toast>`.trim()
 }
 
+function ensureWindowsNotificationShortcut() {
+  if (process.platform !== 'win32') return
+
+  const shortcutPath = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Szalo.lnk')
+  const options = {
+    target: process.execPath,
+    args: process.defaultApp ? `"${app.getAppPath()}"` : '',
+    description: 'Szalo',
+    icon: fs.existsSync(ICON_ICO_PATH) ? ICON_ICO_PATH : process.execPath,
+    iconIndex: 0,
+    appUserModelId: 'com.szalo.app',
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(shortcutPath), { recursive: true })
+    const operation = fs.existsSync(shortcutPath) ? 'update' : 'create'
+    const ok = shell.writeShortcutLink(shortcutPath, operation, options)
+    logToFile('NOTIFICATION_SHORTCUT_READY', { ok, shortcutPath, operation, appUserModelId: options.appUserModelId })
+  } catch (error) {
+    logToFile('NOTIFICATION_SHORTCUT_FAILED', error?.message || String(error))
+  }
+}
+
 function focusThreadFromNotification(threadId, type) {
   if (!mainWindow) return
   mainWindow.show()
@@ -221,7 +245,47 @@ function focusThreadFromNotification(threadId, type) {
   }
 }
 
+function powershellBase64(value) {
+  return Buffer.from(String(value ?? ''), 'utf8').toString('base64')
+}
+
+function showWindowsWinRtNotification(payload) {
+  if (process.platform !== 'win32') return false
+
+  const title64 = powershellBase64(payload.title || 'Szalo')
+  const body64 = powershellBase64(payload.body || '')
+  const script = `
+$ErrorActionPreference = 'Stop'
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
+$title = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${title64}'))
+$body = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${body64}'))
+$escapedTitle = [Security.SecurityElement]::Escape($title)
+$escapedBody = [Security.SecurityElement]::Escape($body)
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml("<toast><visual><binding template='ToastGeneric'><text>$escapedTitle</text><text>$escapedBody</text></binding></visual></toast>")
+$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
+$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('com.szalo.app')
+$notifier.Show($toast)
+`.trim()
+  const encoded = Buffer.from(script, 'utf16le').toString('base64')
+  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  let stderr = ''
+  child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+  child.on('error', (error) => logToFile('NOTIFICATION_WINRT_FAILED', error?.message || String(error)))
+  child.on('close', (code) => {
+    if (code === 0) logToFile('NOTIFICATION_WINRT_SHOWN', { threadId: payload.threadId, type: payload.type })
+    else logToFile('NOTIFICATION_WINRT_FAILED', { code, stderr: stderr.trim() })
+  })
+  return true
+}
+
 function showStandardNotification(payload, iconPath = ICON_PATH) {
+  let fallbackShown = false
   const notification = new Notification({
     title: payload.title || 'Szalo',
     body: payload.body || '',
@@ -231,13 +295,18 @@ function showStandardNotification(payload, iconPath = ICON_PATH) {
   })
 
   notification.on('click', () => focusThreadFromNotification(payload.threadId, payload.type))
+  notification.on('show', () => logToFile('NOTIFICATION_STANDARD_SHOWN', { threadId: payload.threadId, type: payload.type, hasCustomIcon: iconPath !== ICON_PATH }))
+  notification.on('failed', (_event, error) => {
+    logToFile('NOTIFICATION_STANDARD_FAILED', error || '')
+    if (!fallbackShown) {
+      fallbackShown = showWindowsWinRtNotification(payload)
+    }
+  })
   notification.show()
   return notification
 }
 
 async function showNativeNotification(payload) {
-  if (!Notification.isSupported()) return
-
   const normalized = {
     title: typeof payload?.title === 'string' ? payload.title : 'Szalo',
     body: typeof payload?.body === 'string' ? payload.body : '',
@@ -245,31 +314,15 @@ async function showNativeNotification(payload) {
     type: payload?.type,
     avatar: payload?.avatar,
   }
-  const avatarIconPath = await resolveNotificationAvatarIcon(normalized.avatar)
 
-  if (process.platform !== 'win32' || !avatarIconPath) {
-    showStandardNotification(normalized, avatarIconPath || ICON_PATH)
+  if (!Notification.isSupported()) {
+    showWindowsWinRtNotification(normalized)
     return
   }
 
-  let fallbackShown = false
-  const notification = new Notification({
-    toastXml: createWindowsToastXml({
-      title: normalized.title,
-      body: normalized.body,
-      avatarIconPath,
-    }),
-  })
+  const avatarIconPath = await resolveNotificationAvatarIcon(normalized.avatar)
 
-  notification.on('click', () => focusThreadFromNotification(normalized.threadId, normalized.type))
-  notification.on('failed', (_event, error) => {
-    logToFile('NOTIFICATION_TOAST_XML_FAILED', error || '')
-    if (!fallbackShown) {
-      fallbackShown = true
-      showStandardNotification(normalized, avatarIconPath)
-    }
-  })
-  notification.show()
+  showStandardNotification(normalized, avatarIconPath || ICON_PATH)
 }
 
 function showRendererLoadError(window, title, details) {
@@ -804,6 +857,7 @@ ipcMain.on('move-bubble-dock', (_event, { dx, dy }) => {
 app.on('ready', () => {
   logToFile('App ready, isDev:', isDev, 'devUrl:', DEV_URL)
   logToFile('Resource paths:', { app: app.getAppPath(), resources: process.resourcesPath })
+  ensureWindowsNotificationShortcut()
   Menu.setApplicationMenu(null)
   createWindow()
   createTray()

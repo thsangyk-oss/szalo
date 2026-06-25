@@ -60,6 +60,11 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 // DMs — retaining more of them is the main lever for a useful CRM history.
 const MAX_THREAD_MESSAGES = 2000;
 const MAX_PROXY_BYTES = 100 * 1024 * 1024;
+const LISTENER_WATCHDOG_INTERVAL_MS = 60 * 1000;
+const LISTENER_STALE_MS = 15 * 60 * 1000;
+const LISTENER_MAX_AGE_MS = 60 * 60 * 1000;
+const LISTENER_RESTART_DELAY_MS = 10 * 1000;
+const LISTENER_INTERNAL_RETRY_GRACE_MS = 2 * 60 * 1000;
 const ROOT = process.cwd();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -228,6 +233,14 @@ const userHydrationInFlight = new Map<string, Promise<{ profile?: User; conversa
 // dName is often empty.
 const userNameCache = new Map<string, string>();
 let persistTimer: NodeJS.Timeout | null = null;
+let listenerStartedAt = 0;
+let lastListenerActivityAt = 0;
+let lastListenerConnectedAt = 0;
+let lastListenerDisconnectedAt = 0;
+let listenerRestartCount = 0;
+let listenerRestarting = false;
+let listenerWatchdogTimer: NodeJS.Timeout | null = null;
+let listenerRestartTimer: NodeJS.Timeout | null = null;
 
 function createZalo() {
   return new Zalo({
@@ -435,6 +448,122 @@ function recordClientEvent(event: string, detail?: unknown) {
 function recordListenerEvent(event: string, detail?: unknown) {
   listenerEvents.unshift({ ts: Date.now(), event, detail });
   listenerEvents.splice(50);
+}
+
+function touchListener(event: string, detail?: unknown) {
+  lastListenerActivityAt = Date.now();
+  recordListenerEvent(event, detail);
+}
+
+function listenerWsReadyState() {
+  const listener = zaloApi?.listener as unknown as { ws?: { readyState?: number } | null } | undefined;
+  return typeof listener?.ws?.readyState === "number" ? listener.ws.readyState : null;
+}
+
+function requestOldMessages(reason: string) {
+  if (!zaloApi) return;
+  try {
+    zaloApi.listener.requestOldMessages(ThreadType.User);
+    zaloApi.listener.requestOldMessages(ThreadType.Group);
+    touchListener("old_messages_requested", { reason });
+  } catch (error) {
+    touchListener("old_messages_request_error", { reason, error: errorMessage(error) });
+  }
+}
+
+function scheduleOldMessageRequest(reason: string) {
+  setTimeout(() => requestOldMessages(reason), 2500);
+}
+
+async function restartZaloListener(reason: string, detail?: unknown) {
+  if (!zaloApi || listenerRestarting) return;
+  if (listenerWsReadyState() === 1 && !["stale_listener", "periodic_refresh"].includes(reason)) {
+    touchListener("watchdog_restart_skipped", { reason, detail, wsReadyState: 1 });
+    return;
+  }
+  listenerRestarting = true;
+  listenerRestartCount += 1;
+  touchListener("watchdog_restart", {
+    reason,
+    detail,
+    restartCount: listenerRestartCount,
+    wsReadyState: listenerWsReadyState(),
+    listenerAgeMs: listenerStartedAt ? Date.now() - listenerStartedAt : null,
+    idleMs: lastListenerActivityAt ? Date.now() - lastListenerActivityAt : null,
+  });
+
+  try {
+    try {
+      zaloApi.listener.stop();
+    } catch (error) {
+      touchListener("watchdog_stop_error", { reason, error: errorMessage(error) });
+    }
+
+    await delay(1000);
+    if (!zaloApi) return;
+
+    zaloApi.listener.start({ retryOnClose: true });
+    listenerStartedAt = Date.now();
+    lastListenerActivityAt = listenerStartedAt;
+    lastListenerDisconnectedAt = 0;
+    lastError = "";
+    loginState = "online";
+    emitState();
+    scheduleOldMessageRequest(`restart:${reason}`);
+  } catch (error) {
+    lastError = `Listener restart failed: ${errorMessage(error)}`;
+    touchListener("watchdog_restart_error", { reason, error: errorMessage(error) });
+    emitState();
+  } finally {
+    listenerRestarting = false;
+  }
+}
+
+function scheduleListenerRestart(reason: string, detail?: unknown, delayMs = LISTENER_RESTART_DELAY_MS) {
+  if (listenerRestartTimer) return;
+  listenerRestartTimer = setTimeout(() => {
+    listenerRestartTimer = null;
+    void restartZaloListener(reason, detail);
+  }, delayMs);
+}
+
+function stopListenerWatchdog() {
+  if (listenerWatchdogTimer) {
+    clearInterval(listenerWatchdogTimer);
+    listenerWatchdogTimer = null;
+  }
+  if (listenerRestartTimer) {
+    clearTimeout(listenerRestartTimer);
+    listenerRestartTimer = null;
+  }
+}
+
+function startListenerWatchdog() {
+  stopListenerWatchdog();
+  listenerWatchdogTimer = setInterval(() => {
+    if (!zaloApi || loginState !== "online" || listenerRestarting) return;
+
+    const now = Date.now();
+    const wsReadyState = listenerWsReadyState();
+    const listenerAgeMs = listenerStartedAt ? now - listenerStartedAt : 0;
+    const idleMs = lastListenerActivityAt ? now - lastListenerActivityAt : 0;
+
+    if (wsReadyState !== 1) {
+      const disconnectedAgeMs = lastListenerDisconnectedAt ? now - lastListenerDisconnectedAt : Number.POSITIVE_INFINITY;
+      if (disconnectedAgeMs < LISTENER_INTERNAL_RETRY_GRACE_MS) return;
+      void restartZaloListener("socket_not_open", { wsReadyState, listenerAgeMs, idleMs });
+      return;
+    }
+
+    if (idleMs > LISTENER_STALE_MS) {
+      void restartZaloListener("stale_listener", { wsReadyState, listenerAgeMs, idleMs });
+      return;
+    }
+
+    if (listenerAgeMs > LISTENER_MAX_AGE_MS) {
+      void restartZaloListener("periodic_refresh", { wsReadyState, listenerAgeMs, idleMs });
+    }
+  }, LISTENER_WATCHDOG_INTERVAL_MS);
 }
 
 function emitState() {
@@ -871,13 +1000,15 @@ function upsertMessage(message: ChatMessage) {
   }
 
   const existing = conversations.get(message.threadId);
-  const hasNewIncomingMessage = !message.isSelf && isNew;
+  const existingLastTimestamp = existing?.lastTimestamp ?? 0;
+  const isLatest = !existingLastTimestamp || message.timestamp >= existingLastTimestamp;
+  const hasNewIncomingMessage = !message.isSelf && isNew && isLatest;
   mergeConversation({
     id: message.threadId,
     type: message.type,
     name: message.isSelf ? undefined : message.senderName,
-    lastMessage: message.text || (message.attachments.length ? "Attachment" : ""),
-    lastTimestamp: message.timestamp,
+    lastMessage: isLatest ? message.text || (message.attachments.length ? "Attachment" : "") : existing?.lastMessage,
+    lastTimestamp: isLatest ? message.timestamp : existing?.lastTimestamp,
     unread: hasNewIncomingMessage ? (existing?.manualUnread ? 1 : (existing?.unread ?? 0) + 1) : existing?.unread ?? 0,
     manualUnread: hasNewIncomingMessage ? false : existing?.manualUnread,
   });
@@ -888,6 +1019,7 @@ function upsertMessage(message: ChatMessage) {
     }
   }
   schedulePersist();
+  return { isNew, isLatest, countedUnread: hasNewIncomingMessage };
 }
 
 async function saveSession(session: SavedSession) {
@@ -951,23 +1083,39 @@ async function afterLogin(api: API) {
   }
 
   api.listener.on("connected", () => {
-    recordListenerEvent("connected");
+    lastListenerConnectedAt = Date.now();
+    lastListenerDisconnectedAt = 0;
+    touchListener("connected", {
+      restartCount: listenerRestartCount,
+      wsReadyState: listenerWsReadyState(),
+    });
     loginState = "online";
+    lastError = "";
     emitState();
+    scheduleOldMessageRequest("connected");
   });
-  api.listener.on("disconnected", (_code, reason) => {
-    recordListenerEvent("disconnected", { reason });
+  api.listener.on("disconnected", (code, reason) => {
+    lastListenerDisconnectedAt = Date.now();
+    touchListener("disconnected", { code, reason });
     lastError = reason;
     emitState();
   });
+  api.listener.on("closed", (code, reason) => {
+    lastListenerDisconnectedAt = Date.now();
+    touchListener("closed", { code, reason });
+    if (![1000, 3000, 3003].includes(Number(code))) {
+      scheduleListenerRestart("closed", { code, reason });
+    }
+  });
   api.listener.on("error", (error) => {
-    recordListenerEvent("error", { error: errorMessage(error) });
+    touchListener("error", { error: errorMessage(error) });
     lastError = errorMessage(error);
     emitState();
+    scheduleListenerRestart("error", { error: errorMessage(error) }, 30000);
   });
   api.listener.on("message", (message) => {
     const normalized = normalizeIncoming(message);
-    recordListenerEvent("message", {
+    touchListener("message", {
       threadId: normalized.threadId,
       type: normalized.type,
       isSelf: normalized.isSelf,
@@ -980,29 +1128,29 @@ async function afterLogin(api: API) {
     io.emit("conversations", sortedConversations());
   });
   api.listener.on("typing", (typing) => {
-    recordListenerEvent("typing", { threadId: typing.threadId, isSelf: typing.isSelf });
+    touchListener("typing", { threadId: typing.threadId, isSelf: typing.isSelf });
     io.emit("typing", typing);
   });
   api.listener.on("seen_messages", (items) => {
     const updates = markDeliveryStatus(items, "seen");
-    recordListenerEvent("seen_messages", { count: items.length, updates: updates.length });
+    touchListener("seen_messages", { count: items.length, updates: updates.length });
     io.emit("seen_messages", items);
   });
   api.listener.on("delivered_messages", (items) => {
     const updates = markDeliveryStatus(items, "delivered");
-    recordListenerEvent("delivered_messages", { count: items.length, updates: updates.length });
+    touchListener("delivered_messages", { count: items.length, updates: updates.length });
     io.emit("delivered_messages", items);
   });
   api.listener.on("group_event", (event) => {
-    recordListenerEvent("group_event", { threadId: event.threadId, isSelf: event.isSelf, type: event.type });
+    touchListener("group_event", { threadId: event.threadId, isSelf: event.isSelf, type: event.type });
     io.emit("group_event", event);
   });
   api.listener.on("friend_event", (event) => {
-    recordListenerEvent("friend_event", { isSelf: event.isSelf, type: event.type });
+    touchListener("friend_event", { isSelf: event.isSelf, type: event.type });
     io.emit("friend_event", event);
   });
   api.listener.on("reaction", (reaction) => {
-    recordListenerEvent("reaction", { threadId: reaction.threadId, isSelf: reaction.isSelf });
+    touchListener("reaction", { threadId: reaction.threadId, isSelf: reaction.isSelf });
     // Store reaction on the message in cache
     const threadId = String(reaction.threadId ?? "");
     const data = reaction.data;
@@ -1026,11 +1174,42 @@ async function afterLogin(api: API) {
     io.emit("reaction", { threadId, msgId, icon, userId, raw: reaction });
   });
   api.listener.on("undo", (undo) => {
-    recordListenerEvent("undo", { threadId: undo.threadId, isSelf: undo.isSelf });
+    touchListener("undo", { threadId: undo.threadId, isSelf: undo.isSelf });
     applyUndo({ threadId: String(undo.threadId), msgId: (undo as { msgId?: string | number }).msgId, cliMsgId: (undo as { cliMsgId?: string | number }).cliMsgId });
     io.emit("undo", undo);
   });
+  api.listener.on("old_messages", (items, type) => {
+    const latestByThread = new Map<string, ChatMessage>();
+    let newCount = 0;
+    let countedUnread = 0;
+    for (const item of items) {
+      const normalized = normalizeIncoming(item);
+      const result = upsertMessage(normalized);
+      if (!result.isNew || !result.isLatest) continue;
+      newCount += 1;
+      if (result.countedUnread) countedUnread += 1;
+      const current = latestByThread.get(normalized.threadId);
+      if (!current || normalized.timestamp > current.timestamp) {
+        latestByThread.set(normalized.threadId, normalized);
+      }
+    }
+    touchListener("old_messages", {
+      type: threadKind(type),
+      count: items.length,
+      newCount,
+      countedUnread,
+      emittedThreads: latestByThread.size,
+    });
+    for (const message of latestByThread.values()) {
+      io.emit("message", message);
+    }
+    if (newCount > 0) io.emit("conversations", sortedConversations());
+  });
+  listenerStartedAt = Date.now();
+  lastListenerActivityAt = listenerStartedAt;
+  lastListenerDisconnectedAt = 0;
   api.listener.start({ retryOnClose: true });
+  startListenerWatchdog();
   void refreshConversationControls()
     .then(() => io.emit("conversations", sortedConversations()))
     .catch((error) => recordListenerEvent("controls_error", { error: errorMessage(error) }));
@@ -1239,6 +1418,18 @@ app.get("/api/health", (_req, res) => {
       conversations: conversations.size,
       messageThreads: messages.size,
     },
+    listener: {
+      wsReadyState: listenerWsReadyState(),
+      startedAt: listenerStartedAt,
+      lastActivityAt: lastListenerActivityAt,
+      lastConnectedAt: lastListenerConnectedAt,
+      lastDisconnectedAt: lastListenerDisconnectedAt,
+      idleMs: lastListenerActivityAt ? Date.now() - lastListenerActivityAt : null,
+      ageMs: listenerStartedAt ? Date.now() - listenerStartedAt : null,
+      restartCount: listenerRestartCount,
+      restarting: listenerRestarting,
+      watchdogEnabled: listenerWatchdogTimer !== null,
+    },
     messageStats: messageStats(),
     recentSends: sendAttempts,
     recentClientEvents: clientEvents,
@@ -1385,6 +1576,7 @@ app.post("/api/logout", async (req, res) => {
     keyName: req.apiKeyEntry?.name ?? "",
     action: "zalo_logout",
   });
+  stopListenerWatchdog();
   zaloApi?.listener.stop();
   zaloApi = null;
   account = null;
@@ -1688,13 +1880,14 @@ app.post("/api/conversations/:type/:threadId/action", async (req, res) => {
 app.get("/api/messages/:type/:threadId", async (req, res) => {
   const { type, threadId } = req.params as { type: ThreadKind; threadId: string };
   const forceRefresh = req.query.refresh === "1";
+  const markRead = req.query.markRead !== "0" && req.query.read !== "0";
   activity.record({
     ts: Date.now(),
     keyId: req.apiKeyEntry?.id ?? null,
     keyName: req.apiKeyEntry?.name ?? "",
     action: "open_thread",
     threadId,
-    detail: { type, refresh: forceRefresh },
+    detail: { type, refresh: forceRefresh, markRead },
   });
   if (!zaloApi) return res.status(401).json({ error: "Not logged in" });
   if (type === "user") {
@@ -1717,7 +1910,7 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
   }
   const threadMessages = messages.get(threadId) ?? [];
   const conversation = conversations.get(threadId);
-  if (conversation) {
+  if (conversation && markRead) {
     const hadUnread = conversation.unread !== 0;
     conversation.unread = 0;
     conversation.manualUnread = false;

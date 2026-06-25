@@ -13,10 +13,11 @@ function build(): Socket | null {
   if (!isConfigured()) return null
   const { baseUrl, apiKey } = getSettings()
   return io(baseUrl, {
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     auth: { apiKey },
     reconnection: true,
     reconnectionAttempts: Infinity,
+    timeout: 10000,
   })
 }
 
@@ -35,6 +36,16 @@ onSettingsChange(rebuild)
 
 export function getSocket(): Socket | null {
   return current
+}
+
+export function forceReconnectSocket() {
+  if (current) {
+    try { current.disconnect() } catch { /* ignore */ }
+    try { current.connect() } catch { /* ignore */ }
+    return
+  }
+
+  rebuild()
 }
 
 export function subscribeSocket(listener: (socket: Socket | null) => void) {

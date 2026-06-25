@@ -1,9 +1,9 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, CreditCard, FileUp, Info, LogOut, MessageCircle, Mic, MoreHorizontal, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
-import { subscribeSocket } from './socket'
+import { forceReconnectSocket, subscribeSocket } from './socket'
 import SettingsScreen from './SettingsScreen'
 import MessageActions from './MessageActions'
 import GlobalSearch from './GlobalSearch'
@@ -41,6 +41,8 @@ const electron = (window as unknown as { electronAPI?: {
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_FILE_COUNT = 10
+const SOCKET_HEARTBEAT_INTERVAL_MS = 60 * 1000
+const SOCKET_STALE_MS = 5 * 60 * 1000
 
 type ThreadKind = 'user' | 'group'
 type ConversationFilter = 'all' | ThreadKind
@@ -249,6 +251,20 @@ function appendMessage(list: ChatMessage[], message: ChatMessage) {
   return [...list, message]
 }
 
+function latestMessageTimestamp(list: ChatMessage[]) {
+  return list.reduce((latest, message) => Math.max(latest, message.timestamp || 0), 0)
+}
+
+function trimSet<T>(set: Set<T>, maxSize: number, keepSize: number) {
+  if (set.size <= maxSize) return
+  let removeCount = set.size - keepSize
+  for (const item of set) {
+    set.delete(item)
+    removeCount -= 1
+    if (removeCount <= 0) break
+  }
+}
+
 function deliveryLabel(status?: DeliveryStatus) {
   if (status === 'seen') return 'Đã xem'
   if (status === 'delivered') return 'Đã nhận'
@@ -454,7 +470,14 @@ function App() {
   const endRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<Conversation | null>(null)
   const conversationsRef = useRef<Conversation[]>([])
-  const mainWindowVisibleRef = useRef(!document.hidden)
+  const messagesRef = useRef<ChatMessage[]>([])
+  const mainWindowVisibleRef = useRef(!document.hidden && document.hasFocus())
+  // Bookkeeping for reconnect recovery and notification dedupe.
+  const conversationTimestampsRef = useRef<Map<string, number>>(new Map())
+  const conversationSnapshotReadyRef = useRef(false)
+  const handledNotificationIdsRef = useRef<Set<string>>(new Set())
+  const messageSyncInFlightRef = useRef<Set<string>>(new Set())
+  const lastSocketActivityRef = useRef(Date.now())
   // Threads whose history we've already force-refreshed this session, so we
   // only hit Zalo for fresh history on the first open of each thread.
   const refreshedThreadsRef = useRef<Set<string>>(new Set())
@@ -524,19 +547,161 @@ function App() {
       .reverse()
   }, [messages])
 
-  function pushNotification(item: Omit<AppNotification, 'id' | 'ts' | 'read'>) {
+  const loadConversationMessages = useCallback((conversation: Pick<Conversation, 'id' | 'type'>, options: { refresh?: boolean; markRead?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (options.refresh) params.set('refresh', '1')
+    if (options.markRead === false) params.set('markRead', '0')
+    const query = params.toString()
+    return apiJson<ChatMessage[]>(`/api/messages/${conversation.type}/${conversation.id}${query ? `?${query}` : ''}`)
+  }, [])
+
+  const markThreadSeen = useCallback((threadId: string, type: ThreadKind) => {
+    return apiJson('/api/events/seen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId, type }),
+    }).catch(() => undefined)
+  }, [])
+
+  const pushNotification = useCallback((item: Omit<AppNotification, 'id' | 'ts' | 'read'>) => {
     setNotifications((current) => [
       { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, ts: Date.now(), read: false },
       ...current,
     ].slice(0, 60))
-  }
+  }, [])
+
+  const markNotificationHandled = useCallback((messageId: string) => {
+    if (!messageId) return
+    handledNotificationIdsRef.current.add(messageId)
+    trimSet(handledNotificationIdsRef.current, 600, 500)
+  }, [])
+
+  const notifyIncomingMessage = useCallback((message: ChatMessage, conversation?: Conversation) => {
+    if (message.isSelf || handledNotificationIdsRef.current.has(message.id)) return
+    markNotificationHandled(message.id)
+
+    const currentSelected = selectedRef.current
+    const activeSelectedThread = currentSelected?.id === message.threadId && mainWindowVisibleRef.current && !document.hidden
+    if (activeSelectedThread) return
+
+    const conv = conversation ?? conversationsRef.current.find((c) => c.id === message.threadId)
+    const isMuted = conv?.muted
+    const title = messageNotificationTitle(message, conv)
+    const body = messageNotificationBody(message, conv)
+    const avatar = conv?.avatar
+    pushNotification({ kind: 'message', title, body, threadId: message.threadId, type: message.type, avatar })
+    if (!isMuted) {
+      setNotice(`${title}: ${body}`)
+      if (electron) {
+        electron.sendNotification({ title, body, threadId: message.threadId, type: message.type, avatar })
+        electron.flashFrame()
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: avatar })
+      }
+    }
+  }, [markNotificationHandled, pushNotification])
+
+  const syncConversationMessages = useCallback(async (
+    conversation: Conversation,
+    options: { sinceTs?: number; updateSelected?: boolean; markRead?: boolean; notify?: boolean; refresh?: boolean } = {},
+  ) => {
+    const key = `${conversation.type}:${conversation.id}`
+    if (messageSyncInFlightRef.current.has(key)) return
+    messageSyncInFlightRef.current.add(key)
+    try {
+      const data = await loadConversationMessages(conversation, {
+        refresh: options.refresh,
+        markRead: options.markRead ?? false,
+      })
+      const list = Array.isArray(data) ? data : []
+      const stillSelected = selectedRef.current?.id === conversation.id
+
+      if (options.updateSelected && stillSelected) {
+        setMessages(list)
+      }
+      if (options.markRead && stillSelected) {
+        setConversations((current) => markConversationRead(current, conversation.id))
+        void markThreadSeen(conversation.id, conversation.type)
+      }
+
+      const candidates = list
+        .filter((message) => !message.isSelf)
+        .filter((message) => !options.sinceTs || message.timestamp > options.sinceTs)
+        .filter((message) => !handledNotificationIdsRef.current.has(message.id))
+        .sort((a, b) => a.timestamp - b.timestamp)
+
+      if (candidates.length === 0) return
+      const latest = candidates[candidates.length - 1]
+      for (const message of candidates.slice(0, -1)) markNotificationHandled(message.id)
+      if (options.notify) notifyIncomingMessage(latest, conversation)
+      else markNotificationHandled(latest.id)
+    } catch (error) {
+      reportClientEvent('message-sync-error', {
+        threadId: conversation.id,
+        type: conversation.type,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      messageSyncInFlightRef.current.delete(key)
+    }
+  }, [loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage])
+
+  // Socket.IO replays conversation snapshots after reconnect, not every missed
+  // message event. Use timestamp changes to fetch just the threads that moved.
+  const reconcileConversations = useCallback((items: Conversation[], previousTimestamps: Map<string, number>) => {
+    const currentSelected = selectedRef.current
+    const selectedActive = Boolean(currentSelected && mainWindowVisibleRef.current && !document.hidden)
+    for (const conversation of items) {
+      const lastTimestamp = conversation.lastTimestamp ?? 0
+      if (!lastTimestamp) continue
+
+      const previousTimestamp = previousTimestamps.get(conversation.id) ?? 0
+      const changedSinceSnapshot = lastTimestamp > previousTimestamp
+      const isSelected = currentSelected?.id === conversation.id
+      const selectedIsStale = isSelected && lastTimestamp > latestMessageTimestamp(messagesRef.current)
+      if (!changedSinceSnapshot && !selectedIsStale) continue
+
+      const shouldMarkRead = Boolean(isSelected && selectedActive)
+      const shouldNotify = Boolean(changedSinceSnapshot && !shouldMarkRead && conversation.unread > 0 && !conversation.manualUnread)
+      const shouldRefresh = conversation.type === 'group' && (changedSinceSnapshot || selectedIsStale)
+      void syncConversationMessages(conversation, {
+        sinceTs: previousTimestamp || undefined,
+        updateSelected: isSelected,
+        markRead: shouldMarkRead,
+        notify: shouldNotify,
+        refresh: shouldRefresh,
+      })
+    }
+  }, [syncConversationMessages])
+
+  const applyConversationSnapshot = useCallback((items: Conversation[]) => {
+    const previousTimestamps = new Map(conversationTimestampsRef.current)
+    const wasReady = conversationSnapshotReadyRef.current
+    const currentSelected = selectedRef.current
+    const selectedThreadVisible = Boolean(currentSelected && mainWindowVisibleRef.current && !document.hidden)
+    setConversations(selectedThreadVisible && currentSelected ? markConversationRead(items, currentSelected.id) : items)
+    if (wasReady) reconcileConversations(items, previousTimestamps)
+
+    if (currentSelected) {
+      const updated = items.find((item) => item.id === currentSelected.id)
+      if (updated && (updated.name !== currentSelected.name || updated.avatar !== currentSelected.avatar || selectedThreadVisible)) {
+        setSelected(selectedThreadVisible ? { ...updated, unread: 0, manualUnread: false } : updated)
+      }
+    }
+  }, [reconcileConversations])
 
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
 
   useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
     conversationsRef.current = conversations
+    conversationTimestampsRef.current = new Map(conversations.map((conversation) => [conversation.id, conversation.lastTimestamp ?? 0]))
+    if (conversations.length > 0) conversationSnapshotReadyRef.current = true
   }, [conversations])
 
   useEffect(() => {
@@ -546,25 +711,21 @@ function App() {
       const current = selectedRef.current
       if (!current) return
       setConversations((list) => markConversationRead(list, current.id))
-      apiJson('/api/events/seen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: current.id, type: current.type }),
-      }).catch(() => undefined)
+      void markThreadSeen(current.id, current.type)
     }
     const handleDocumentVisibility = () => {
-      if (!electron) mainWindowVisibleRef.current = !document.hidden
+      if (!electron) mainWindowVisibleRef.current = !document.hidden && document.hasFocus()
       markCurrentSelectedRead()
     }
     const handleWindowFocus = () => {
-      if (!electron) mainWindowVisibleRef.current = true
+      if (!electron) mainWindowVisibleRef.current = !document.hidden
       markCurrentSelectedRead()
     }
     const handleWindowBlur = () => {
-      if (!electron) mainWindowVisibleRef.current = !document.hidden
+      if (!electron) mainWindowVisibleRef.current = false
     }
     const cleanupVisibility = electron?.onMainWindowVisibility?.((state) => {
-      mainWindowVisibleRef.current = Boolean(state.visible)
+      mainWindowVisibleRef.current = Boolean(state.visible && state.focused)
       markCurrentSelectedRead()
     })
 
@@ -577,7 +738,7 @@ function App() {
       window.removeEventListener('focus', handleWindowFocus)
       window.removeEventListener('blur', handleWindowBlur)
     }
-  }, [])
+  }, [markThreadSeen])
 
   useEffect(() => {
     // Subscribe to the live socket. The socket module rebuilds it whenever
@@ -593,26 +754,34 @@ function App() {
     if (!configured || !socket) return
 
     const handleConnect = () => {
+      lastSocketActivityRef.current = Date.now()
       setSocketConnected(true)
       reportClientEvent('socket-connect', { socketId: socket.id })
+      void apiJson<Status>('/api/status').then(setStatus).catch(() => undefined)
+      void apiJson<Conversation[]>('/api/conversations').then(applyConversationSnapshot).catch(() => undefined)
     }
     const handleDisconnect = (reason: string) => {
       setSocketConnected(false)
       reportClientEvent('socket-disconnect', { reason })
     }
+    const handleConnectError = (error: Error) => {
+      setSocketConnected(false)
+      reportClientEvent('socket-connect-error', { message: error.message })
+    }
+    const handleStatus = (nextStatus: Status) => {
+      lastSocketActivityRef.current = Date.now()
+      setStatus(nextStatus)
+    }
     const handleConversations = (items: Conversation[]) => {
-      const currentSelected = selectedRef.current
-      const selectedThreadVisible = Boolean(currentSelected && mainWindowVisibleRef.current && !document.hidden)
-      setConversations(selectedThreadVisible && currentSelected ? markConversationRead(items, currentSelected.id) : items)
-      // Sync selected with latest conversation data (name/avatar may change)
-      if (currentSelected) {
-        const updated = items.find((item) => item.id === currentSelected.id)
-        if (updated && (updated.name !== currentSelected.name || updated.avatar !== currentSelected.avatar || selectedThreadVisible)) {
-          setSelected(selectedThreadVisible ? { ...updated, unread: 0, manualUnread: false } : updated)
-        }
-      }
+      lastSocketActivityRef.current = Date.now()
+      applyConversationSnapshot(items)
     }
     const handleMessage = (message: ChatMessage) => {
+      lastSocketActivityRef.current = Date.now()
+      const knownTimestamp = conversationTimestampsRef.current.get(message.threadId) ?? 0
+      if ((message.timestamp ?? 0) > knownTimestamp) {
+        conversationTimestampsRef.current.set(message.threadId, message.timestamp)
+      }
       const currentSelected = selectedRef.current
       const isSelectedThread = currentSelected?.id === message.threadId
       const isOpenThread = Boolean(isSelectedThread && mainWindowVisibleRef.current && !document.hidden)
@@ -623,46 +792,50 @@ function App() {
       if (isOpenThread) {
         setConversations((current) => markConversationRead(current, message.threadId))
         if (!message.isSelf) {
-          apiJson('/api/events/seen', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ threadId: message.threadId, type: message.type }),
-          }).catch(() => undefined)
+          markNotificationHandled(message.id)
+          void markThreadSeen(message.threadId, message.type)
         }
       }
       if (!message.isSelf && !isOpenThread) {
-        const conv = conversationsRef.current.find((c) => c.id === message.threadId)
-        const isMuted = conv?.muted
-        const title = messageNotificationTitle(message, conv)
-        const body = messageNotificationBody(message, conv)
-        const avatar = conv?.avatar
-        pushNotification({ kind: 'message', title, body, threadId: message.threadId, type: message.type, avatar })
-        if (!isMuted) {
-          setNotice(`${title}: ${body}`)
-          if (electron) {
-            electron.sendNotification({ title, body, threadId: message.threadId, type: message.type, avatar })
-            electron.flashFrame()
-          } else if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(title, { body, icon: avatar })
-          }
-        }
+        notifyIncomingMessage(message)
       }
     }
     const handleMessageStatus = (event: MessageStatusEvent) => {
+      lastSocketActivityRef.current = Date.now()
       setMessages((current) => updateMessageStatus(current, event))
     }
     const handleGroupEvent = (event: { threadId?: string; type?: unknown }) => {
+      lastSocketActivityRef.current = Date.now()
       const conv = event.threadId ? conversationsRef.current.find((c) => c.id === event.threadId) : undefined
       pushNotification({ kind: 'group', title: 'Cập nhật nhóm', body: 'Có thay đổi trong nhóm', threadId: event.threadId, type: event.threadId ? 'group' : undefined, avatar: conv?.avatar })
       setNotice('Có cập nhật trong nhóm')
     }
     const handleFriendEvent = () => {
+      lastSocketActivityRef.current = Date.now()
       pushNotification({ kind: 'friend', title: 'Cập nhật bạn bè', body: 'Có thay đổi từ bạn bè' })
       setNotice('Có cập nhật bạn bè')
     }
     const handleTyping = (typing: TypingEvent) => {
+      lastSocketActivityRef.current = Date.now()
       if (typing.isSelf) return
       setTypingThreads((current) => ({ ...current, [typing.threadId]: Date.now() + 3500 }))
+    }
+    const handleUndo = (data: { threadId?: string; msgId?: string; cliMsgId?: string }) => {
+      lastSocketActivityRef.current = Date.now()
+      const targetId = String(data.msgId ?? data.cliMsgId ?? '')
+      if (targetId) setMessages((prev) => prev.filter((m) => m.id !== targetId))
+    }
+    const handleReaction = (data: { threadId?: string; msgId?: string; icon?: string; userId?: string }) => {
+      lastSocketActivityRef.current = Date.now()
+      if (!data.threadId || !data.msgId || !data.icon) return
+      setMessages((prev) => prev.map((msg) => {
+        if (msg.id !== data.msgId) return msg
+        const reactions = { ...(msg.reactions || {}) }
+        const users = [...(reactions[data.icon!] || [])]
+        if (!users.includes(data.userId || '')) users.push(data.userId || '')
+        reactions[data.icon!] = users
+        return { ...msg, reactions }
+      }))
     }
     const handleBrowserError = (event: ErrorEvent) => {
       reportClientEvent('browser-error', { message: event.message, source: event.filename, line: event.lineno, column: event.colno })
@@ -696,60 +869,50 @@ function App() {
       setMessageFilter('')
       setOpening(true)
       reportClientEvent('notification-open-thread', { threadId, type: safeType })
-      apiJson<ChatMessage[]>(`/api/messages/${safeType}/${threadId}`)
+      loadConversationMessages({ id: threadId, type: safeType }, { markRead: true })
         .then((data) => setMessages(Array.isArray(data) ? data : []))
         .catch(() => setMessages([]))
         .finally(() => setOpening(false))
-      apiJson('/api/events/seen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId, type: safeType }),
-      }).catch(() => undefined)
+      void markThreadSeen(threadId, safeType)
     })
-    apiJson<Status>('/api/status').then(setStatus).catch((error: Error) => setNotice(error.message))
     socket.on('connect', handleConnect)
     socket.on('disconnect', handleDisconnect)
-    socket.on('status', setStatus)
+    socket.on('connect_error', handleConnectError)
+    socket.on('status', handleStatus)
     socket.on('conversations', handleConversations)
     socket.on('message', handleMessage)
     socket.on('message_status', handleMessageStatus)
     socket.on('group_event', handleGroupEvent)
     socket.on('friend_event', handleFriendEvent)
     socket.on('typing', handleTyping)
-    socket.on('undo', (data: { threadId?: string; msgId?: string; cliMsgId?: string }) => {
-      const targetId = String(data.msgId ?? data.cliMsgId ?? '')
-      if (targetId) setMessages((prev) => prev.filter((m) => m.id !== targetId))
-    })
-    socket.on('reaction', (data: { threadId?: string; msgId?: string; icon?: string; userId?: string }) => {
-      if (!data.threadId || !data.msgId || !data.icon) return
-      setMessages((prev) => prev.map((msg) => {
-        if (msg.id !== data.msgId) return msg
-        const reactions = { ...(msg.reactions || {}) }
-        const users = [...(reactions[data.icon!] || [])]
-        if (!users.includes(data.userId || '')) users.push(data.userId || '')
-        reactions[data.icon!] = users
-        return { ...msg, reactions }
-      }))
-    })
+    socket.on('undo', handleUndo)
+    socket.on('reaction', handleReaction)
     window.addEventListener('error', handleBrowserError)
     window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    if (socket.connected) {
+      handleConnect()
+    } else {
+      apiJson<Status>('/api/status').then(setStatus).catch((error: Error) => setNotice(error.message))
+      apiJson<Conversation[]>('/api/conversations').then(applyConversationSnapshot).catch(() => undefined)
+    }
     return () => {
-      socket.off('status', setStatus)
+      socket.off('status', handleStatus)
       socket.off('connect', handleConnect)
       socket.off('disconnect', handleDisconnect)
+      socket.off('connect_error', handleConnectError)
       socket.off('conversations', handleConversations)
       socket.off('message', handleMessage)
       socket.off('message_status', handleMessageStatus)
       socket.off('group_event', handleGroupEvent)
       socket.off('friend_event', handleFriendEvent)
       socket.off('typing', handleTyping)
-      socket.off('undo')
-      socket.off('reaction')
+      socket.off('undo', handleUndo)
+      socket.off('reaction', handleReaction)
       cleanupOpenThread?.()
       window.removeEventListener('error', handleBrowserError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
-  }, [configured, socket])
+  }, [applyConversationSnapshot, configured, loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage, pushNotification, socket])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -769,11 +932,46 @@ function App() {
   }, [unreadCount])
 
   useEffect(() => {
+    if (!configured) return
+    let stopped = false
+
+    const heartbeat = async () => {
+      if (stopped || !isConfigured()) return
+      const idleMs = Date.now() - lastSocketActivityRef.current
+      if (socket && (!socket.connected || idleMs > SOCKET_STALE_MS)) {
+        reportClientEvent('socket-heartbeat-reconnect', { connected: socket.connected, idleMs })
+        forceReconnectSocket()
+      }
+
+      try {
+        const [nextStatus, nextConversations] = await Promise.all([
+          apiJson<Status>('/api/status'),
+          apiJson<Conversation[]>('/api/conversations'),
+        ])
+        if (stopped) return
+        setStatus(nextStatus)
+        applyConversationSnapshot(nextConversations)
+        lastSocketActivityRef.current = Date.now()
+      } catch (error) {
+        reportClientEvent('socket-heartbeat-error', { error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+
+    const timer = window.setInterval(() => {
+      void heartbeat()
+    }, SOCKET_HEARTBEAT_INTERVAL_MS)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [applyConversationSnapshot, configured, socket])
+
+  useEffect(() => {
     if (!configured || status.state !== 'online') return
     apiJson<Conversation[]>('/api/conversations')
-      .then(setConversations)
+      .then(applyConversationSnapshot)
       .catch((error: Error) => setNotice(error.message))
-  }, [configured, status.state])
+  }, [applyConversationSnapshot, configured, status.state])
 
   // Load server-side categories for the logged-in Zalo account. This is what
   // makes channels follow the account across machines — on login we pull the
@@ -946,14 +1144,9 @@ function App() {
     refreshedThreadsRef.current.add(conversation.id)
     reportClientEvent('conversation-open', { threadId: conversation.id, type: conversation.type, refresh: shouldRefresh, firstOpen })
     try {
-      const suffix = shouldRefresh ? '?refresh=1' : ''
-      const data = await apiJson<ChatMessage[]>(`/api/messages/${conversation.type}/${conversation.id}${suffix}`)
+      const data = await loadConversationMessages(conversation, { refresh: shouldRefresh, markRead: true })
       setMessages(Array.isArray(data) ? data : [])
-      await apiJson('/api/events/seen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: conversation.id, type: conversation.type }),
-      }).catch(() => undefined)
+      await markThreadSeen(conversation.id, conversation.type)
     } catch (error) {
       setMessages([])
       setNotice(error instanceof Error ? error.message : String(error))
