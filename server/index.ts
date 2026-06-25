@@ -155,6 +155,8 @@ type Conversation = {
   raw?: unknown;
 };
 
+type PublicConversation = Omit<Conversation, "raw">;
+
 type ChatMessage = {
   id: string;
   threadId: string;
@@ -585,6 +587,33 @@ function sortedConversations() {
   });
 }
 
+function publicConversation(conversation: Conversation): PublicConversation {
+  return {
+    id: conversation.id,
+    type: conversation.type,
+    name: conversation.name,
+    avatar: conversation.avatar,
+    lastMessage: conversation.lastMessage,
+    lastTimestamp: conversation.lastTimestamp,
+    unread: conversation.unread,
+    manualUnread: conversation.manualUnread,
+    muted: conversation.muted,
+    pinned: conversation.pinned,
+  };
+}
+
+function publicConversations(list = sortedConversations()) {
+  return list.map(publicConversation);
+}
+
+function emitConversations() {
+  io.emit("conversations", publicConversations());
+}
+
+function emitConversation(conversation: Conversation | undefined) {
+  if (conversation) io.emit("conversation", publicConversation(conversation));
+}
+
 function conversationCounts() {
   let users = 0;
   let groups = 0;
@@ -672,7 +701,7 @@ async function hydrateUserConversation(userId: string, emit = true) {
 
     if (conversationIdentityChanged(before, conversation)) {
       schedulePersist();
-      if (emit) io.emit("conversations", sortedConversations());
+      if (emit) emitConversation(conversation);
     }
     return { profile, conversation };
   })().finally(() => {
@@ -1037,7 +1066,7 @@ function upsertMessage(message: ChatMessage) {
   const existingLastTimestamp = existing?.lastTimestamp ?? 0;
   const isLatest = !existingLastTimestamp || message.timestamp >= existingLastTimestamp;
   const hasNewIncomingMessage = !message.isSelf && isNew && isLatest;
-  mergeConversation({
+  const conversation = mergeConversation({
     id: message.threadId,
     type: message.type,
     name: message.isSelf ? undefined : message.senderName,
@@ -1053,7 +1082,7 @@ function upsertMessage(message: ChatMessage) {
     }
   }
   schedulePersist();
-  return { isNew, isLatest, countedUnread: hasNewIncomingMessage };
+  return { isNew, isLatest, countedUnread: hasNewIncomingMessage, conversation };
 }
 
 async function saveSession(session: SavedSession) {
@@ -1157,9 +1186,9 @@ async function afterLogin(api: API) {
       textLength: normalized.text.length,
       fileCount: normalized.attachments.length,
     });
-    upsertMessage(normalized);
+    const result = upsertMessage(normalized);
     io.emit("message", publicMessage(normalized));
-    io.emit("conversations", sortedConversations());
+    emitConversation(result.conversation);
   });
   api.listener.on("typing", (typing) => {
     touchListener("typing", { threadId: typing.threadId, isSelf: typing.isSelf });
@@ -1237,7 +1266,9 @@ async function afterLogin(api: API) {
     for (const message of latestByThread.values()) {
       io.emit("message", publicMessage(message));
     }
-    if (newCount > 0) io.emit("conversations", sortedConversations());
+    if (newCount > 0) {
+      for (const message of latestByThread.values()) emitConversation(conversations.get(message.threadId));
+    }
   });
   listenerStartedAt = Date.now();
   lastListenerActivityAt = listenerStartedAt;
@@ -1245,7 +1276,7 @@ async function afterLogin(api: API) {
   api.listener.start({ retryOnClose: true });
   startListenerWatchdog();
   void refreshConversationControls()
-    .then(() => io.emit("conversations", sortedConversations()))
+    .then(emitConversations)
     .catch((error) => recordListenerEvent("controls_error", { error: errorMessage(error) }));
   emitState();
 }
@@ -1663,7 +1694,7 @@ app.get("/api/friends", async (_req, res) => {
     }, { preferIncomingName: true });
   }
   schedulePersist();
-  io.emit("conversations", sortedConversations());
+  emitConversations();
   if (warning) res.setHeader("X-Zalo-Warning", warning);
   res.json(unique);
 });
@@ -1693,8 +1724,8 @@ app.get("/api/groups", async (_req, res) => {
     }
   }
   schedulePersist();
-  io.emit("conversations", sortedConversations());
-  res.json(sortedConversations().filter((item) => item.type === "group"));
+  emitConversations();
+  res.json(publicConversations(sortedConversations().filter((item) => item.type === "group")));
 });
 
 app.get("/api/groups/:groupId", async (req, res) => {
@@ -1716,7 +1747,7 @@ app.get("/api/groups/:groupId", async (req, res) => {
   }, { preferIncomingName: true });
   if (conversationIdentityChanged(beforeGroupConversation, groupConversation)) {
     schedulePersist();
-    io.emit("conversations", sortedConversations());
+    emitConversation(groupConversation);
   }
 
   // Zalo's getGroupInfo returns members in `memVerList` (array of
@@ -1830,7 +1861,7 @@ app.get("/api/users/:userId", async (req, res) => {
 });
 
 app.get("/api/conversations", (_req, res) => {
-  res.json(sortedConversations());
+  res.json(publicConversations());
 });
 
 // Categories (Slack-style channels) are stored server-side keyed by the
@@ -1907,8 +1938,8 @@ app.post("/api/conversations/:type/:threadId/action", async (req, res) => {
 
   conversations.set(threadId, conversation);
   schedulePersist();
-  io.emit("conversations", sortedConversations());
-  res.json({ ok: true, conversation, action });
+  emitConversation(conversation);
+  res.json({ ok: true, conversation: publicConversation(conversation), action });
 });
 
 app.get("/api/messages/:type/:threadId", async (req, res) => {
@@ -1949,7 +1980,7 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
     conversation.unread = 0;
     conversation.manualUnread = false;
     schedulePersist();
-    if (hadUnread) io.emit("conversations", sortedConversations());
+    if (hadUnread) emitConversation(conversation);
   }
   // zca-js can fetch full history only for groups. For 1-1 chats the cache is
   // realtime-only, so tell the client to show a "from when server started"
@@ -2415,7 +2446,7 @@ app.post("/api/events/seen", async (req, res) => {
     conversation.unread = 0;
     conversation.manualUnread = false;
     schedulePersist();
-    io.emit("conversations", sortedConversations());
+    emitConversation(conversation);
   }
   res.json({ ok: true, count: params.length });
 });
@@ -2472,9 +2503,9 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
     const payload: string | MessageContent = hasRichFields
       ? { msg: messageText, attachments: attachments.length ? attachments : undefined, quote, mentions, styles, ttl }
       : messageText;
-    const result = await zaloApi.sendMessage(payload, threadId, asThreadType(type));
+    const sendResult = await zaloApi.sendMessage(payload, threadId, asThreadType(type));
     const sent: ChatMessage = {
-      id: String(result.message?.msgId ?? Date.now()),
+      id: String(sendResult.message?.msgId ?? Date.now()),
       threadId,
       type,
       senderId: selfId,
@@ -2488,15 +2519,15 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
         href: `/downloads/${path.basename(file.path)}`,
         type: file.mimetype,
       })),
-      raw: result,
+      raw: sendResult,
     };
-    upsertMessage(sent);
+    const update = upsertMessage(sent);
     const clientMessage = publicMessage(sent);
     io.emit("message", clientMessage);
-    io.emit("conversations", sortedConversations());
+    emitConversation(update.conversation);
     attempt.status = "sent";
-    attempt.result = result;
-    res.json({ ok: true, result, message: clientMessage });
+    attempt.result = sendResult;
+    res.json({ ok: true, result: sendResult, message: clientMessage });
   } catch (error) {
     await removeUploadedFiles(files);
     attempt.status = "failed";
@@ -2540,7 +2571,7 @@ io.on("connection", (socket) => {
   }
 
   socket.emit("status", { state: loginState, account, selfId, qrImage, error: lastError, counts: conversationCounts(), serverStartedAt: SERVER_STARTED_AT });
-  socket.emit("conversations", sortedConversations());
+  socket.emit("conversations", publicConversations());
   socket.emit("tunnel_status", tunnel.getStatus());
 });
 

@@ -377,17 +377,6 @@ function sameConversationList(a: Conversation[], b: Conversation[]) {
   return true
 }
 
-function replaceConversation(list: Conversation[], nextConversation: Conversation) {
-  let changed = false
-  const updated = list.map((conversation) => {
-    if (conversation.id !== nextConversation.id) return conversation
-    if (sameConversation(conversation, nextConversation)) return conversation
-    changed = true
-    return nextConversation
-  })
-  return changed ? updated : list
-}
-
 function groupConversationsFirst(list: Conversation[]) {
   return list
     .map((conversation, index) => ({ conversation, index }))
@@ -403,6 +392,7 @@ function sortConversationsByLatest(list: Conversation[]) {
   return list
     .map((conversation, index) => ({ conversation, index }))
     .sort((a, b) => {
+      if (Boolean(a.conversation.pinned) !== Boolean(b.conversation.pinned)) return a.conversation.pinned ? -1 : 1
       const aTime = a.conversation.lastTimestamp ?? 0
       const bTime = b.conversation.lastTimestamp ?? 0
       if (aTime !== bTime) return bTime - aTime
@@ -410,6 +400,20 @@ function sortConversationsByLatest(list: Conversation[]) {
       return a.index - b.index
     })
     .map(({ conversation }) => conversation)
+}
+
+function replaceConversation(list: Conversation[], nextConversation: Conversation) {
+  let found = false
+  let changed = false
+  const updated = list.map((conversation) => {
+    if (conversation.id !== nextConversation.id) return conversation
+    found = true
+    if (sameConversation(conversation, nextConversation)) return conversation
+    changed = true
+    return nextConversation
+  })
+  if (!found) return sortConversationsByLatest([...list, nextConversation])
+  return changed ? sortConversationsByLatest(updated) : list
 }
 
 function contactId(contact: ZaloContact) {
@@ -1020,6 +1024,22 @@ function App() {
     }
   }, [reconcileConversations])
 
+  const applyConversationUpdate = useCallback((conversation: Conversation) => {
+    const currentSelected = selectedRef.current
+    const selectedThreadVisible = Boolean(currentSelected?.id === conversation.id && mainWindowVisibleRef.current && !document.hidden)
+    const nextConversation = selectedThreadVisible ? { ...conversation, unread: 0, manualUnread: false } : conversation
+    const lastTimestamp = conversation.lastTimestamp ?? 0
+    if (lastTimestamp) conversationTimestampsRef.current.set(conversation.id, lastTimestamp)
+    setConversations((current) => replaceConversation(current, nextConversation))
+
+    if (currentSelected?.id === conversation.id) {
+      setSelected((current) => {
+        if (!current) return current
+        return sameConversation(current, nextConversation) ? current : nextConversation
+      })
+    }
+  }, [])
+
   useEffect(() => {
     selectedRef.current = selected
   }, [selected])
@@ -1109,6 +1129,10 @@ function App() {
     const handleConversations = (items: Conversation[]) => {
       lastSocketActivityRef.current = Date.now()
       applyConversationSnapshot(items)
+    }
+    const handleConversation = (conversation: Conversation) => {
+      lastSocketActivityRef.current = Date.now()
+      applyConversationUpdate(conversation)
     }
     const handleMessage = (message: ChatMessage) => {
       lastSocketActivityRef.current = Date.now()
@@ -1227,6 +1251,7 @@ function App() {
     socket.on('connect_error', handleConnectError)
     socket.on('status', handleStatus)
     socket.on('conversations', handleConversations)
+    socket.on('conversation', handleConversation)
     socket.on('message', handleMessage)
     socket.on('message_status', handleMessageStatus)
     socket.on('group_event', handleGroupEvent)
@@ -1248,6 +1273,7 @@ function App() {
       socket.off('disconnect', handleDisconnect)
       socket.off('connect_error', handleConnectError)
       socket.off('conversations', handleConversations)
+      socket.off('conversation', handleConversation)
       socket.off('message', handleMessage)
       socket.off('message_status', handleMessageStatus)
       socket.off('group_event', handleGroupEvent)
@@ -1259,7 +1285,7 @@ function App() {
       window.removeEventListener('error', handleBrowserError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
-  }, [applyConversationSnapshot, configured, loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage, pushNotification, setStatusIfChanged, socket])
+  }, [applyConversationSnapshot, applyConversationUpdate, configured, loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage, pushNotification, setStatusIfChanged, socket])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
