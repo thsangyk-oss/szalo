@@ -1,3 +1,13 @@
+/* ============================================================
+   Szalo — Bubble dock & floating chat panel
+   macOS-aesthetic messenger bubbles: soft diffuse shadows,
+   flattened tail corners (Messages-style), SF text, teal self
+   bubbles on white incoming surfaces. Every color references a
+   token from src/index.css (:root) so the palette stays
+   consistent.
+   ============================================================ */
+
+/* ---- Base page reset ---- */
 html, body, #root {
   width: 100%;
   height: 100%;
@@ -7,6 +17,7 @@ html, body, #root {
   background: transparent;
 }
 
+/* ---- Bubble dock page: tiny 72x72 transparent overlay window ---- */
 html.bubbleDockPage,
 :root.bubbleDockPage {
   width: 72px !important;
@@ -32,7 +43,7 @@ body.bubbleDockPage #root {
   max-height: 72px;
   background: transparent !important;
   background-color: transparent !important;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body.bubbleDockPage .dockRoot {
@@ -53,14 +64,16 @@ body.bubbleDockPage .dockRoot {
   isolation: isolate;
 }
 
-/* ===== BUBBLE DOCK ===== */
+/* ===== BUBBLE DOCK: 60x60 floating circle ===== */
 .dockCircle {
   width: 64px;
   height: 64px;
   flex: 0 0 64px;
   border-radius: 50%;
-  background: #1e1a3a;
-  border: 3px solid #7c5cff;
+  background: var(--surface-raised);
+  border: 3px solid var(--accent);
+  /* Soft diffuse black shadow (mac-style), not a colored glow */
+  box-shadow: var(--shadow-md), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -68,7 +81,7 @@ body.bubbleDockPage .dockRoot {
   position: absolute;
   left: 4px;
   top: 4px;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
   user-select: none;
   overflow: hidden;
   touch-action: none;
@@ -76,7 +89,9 @@ body.bubbleDockPage .dockRoot {
 }
 
 .dockCircle:hover {
-  border-color: #9070ff;
+  border-color: var(--accent-hover);
+  box-shadow: var(--shadow-lg), inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  transform: translateY(-1px);
 }
 
 .dockCircle.dragging {
@@ -88,21 +103,21 @@ body.bubbleDockPage .dockRoot {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  transition: filter 0.16s, opacity 0.16s, transform 0.16s;
+  transition: filter var(--transition), opacity var(--transition), transform var(--transition);
 }
 
 .dockLetter {
   font-size: 20px;
   font-weight: 700;
-  color: #7c5cff;
-  transition: filter 0.16s, opacity 0.16s, transform 0.16s;
+  color: var(--text-primary);
+  transition: filter var(--transition), opacity var(--transition), transform var(--transition);
 }
 
 .dockCircle.hasUnread .dockAvatar,
 .dockCircle.hasUnread .dockLetter {
-  filter: blur(3px) saturate(0.78) brightness(0.58);
-  opacity: 0.58;
-  transform: scale(1.05);
+  filter: blur(2.5px) saturate(0.6);
+  opacity: 0.55;
+  transform: scale(1.04);
 }
 
 .dockBadge {
@@ -116,9 +131,9 @@ body.bubbleDockPage .dockRoot {
   min-width: 32px;
   height: 32px;
   transform: translate(-50%, -50%);
-  border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.88);
-  background: linear-gradient(180deg, #ff5b73 0%, #e83d58 100%);
+  border-radius: var(--radius-pill);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: linear-gradient(180deg, #ff5b73 0%, var(--danger) 100%);
   color: #fff;
   font-size: 13px;
   font-weight: 800;
@@ -127,11 +142,8 @@ body.bubbleDockPage .dockRoot {
   text-align: center;
   letter-spacing: 0;
   padding: 0 8px;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.36),
-    0 0 0 1px rgba(118, 9, 28, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(118, 9, 28, 0.18);
 }
 
 .dockCount {
@@ -141,35 +153,41 @@ body.bubbleDockPage .dockRoot {
   z-index: 4;
   min-width: 16px;
   height: 16px;
-  border-radius: 999px;
-  background: #252b38;
-  color: #e4e8f0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-active);
+  color: var(--text-primary);
   font-size: 9px;
   font-weight: 600;
   line-height: 16px;
   text-align: center;
-  border: 1px solid #7c5cff;
+  border: 1px solid var(--accent);
 }
 
-/* ===== BUBBLE PANEL: chat window ===== */
+/* ===== BUBBLE PANEL: floating chat window ===== */
 .panelRoot {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #14171e;
+  background: var(--bg-primary);
   overflow: hidden;
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* SF on Apple platforms, Inter elsewhere — macOS feel everywhere */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Inter', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
   font-size: 13px;
-  color: #e4e8f0;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--text-primary);
 }
 
+/* ---- Panel header ---- */
 .panelHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background: #1a1e28;
-  border-bottom: 1px solid #2a3040;
+  min-height: 52px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-light);
   -webkit-app-region: drag;
   gap: 8px;
 }
@@ -180,28 +198,31 @@ body.bubbleDockPage .dockRoot {
   gap: 8px;
   flex: 1;
   min-width: 0;
-  color: #e4e8f0;
+  color: var(--text-primary);
 }
 
 .panelHeaderTitle strong {
-  font-size: 14px;
+  font-size: 13px;
+  letter-spacing: -0.005em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Avatars — rounded full with a 1px light ring (macOS contact style) */
 .panelHeaderAvatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #252b38;
-  color: #fff;
+  background: var(--bg-active);
+  color: var(--text-primary);
   display: grid;
   place-items: center;
   font-weight: 700;
   font-size: 12px;
   overflow: hidden;
   flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px var(--border-light);
 }
 
 .panelHeaderAvatar img {
@@ -213,21 +234,22 @@ body.bubbleDockPage .dockRoot {
 .panelBackBtn {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 6px;
-  background: #252b38;
-  color: #8b95a8;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
+  transition: background var(--transition), color var(--transition);
 }
 
 .panelBackBtn:hover {
-  background: #2a3040;
-  color: #e4e8f0;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .panelActions {
@@ -239,23 +261,23 @@ body.bubbleDockPage .dockRoot {
 .panelActions button {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 6px;
-  background: #252b38;
-  color: #8b95a8;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  transition: all 0.15s;
+  transition: background var(--transition), color var(--transition);
 }
 
 .panelActions button:hover {
-  background: #2a3040;
-  color: #e4e8f0;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-/* Thread list */
+/* ---- Thread list ---- */
 .panelList {
   flex: 1;
   overflow-y: auto;
@@ -266,12 +288,14 @@ body.bubbleDockPage .dockRoot {
   display: flex;
   align-items: center;
   gap: 4px;
-  border-radius: 8px;
-  transition: background 0.12s;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  transition: background var(--transition), border-color var(--transition);
 }
 
 .panelListItem:hover {
-  background: #1f2430;
+  background: var(--bg-hover);
+  border-color: var(--border-light);
 }
 
 .panelListMain {
@@ -279,10 +303,11 @@ body.bubbleDockPage .dockRoot {
   align-items: center;
   gap: 10px;
   flex: 1;
+  min-width: 0;
   padding: 8px;
   border: 0;
   background: transparent;
-  color: #e4e8f0;
+  color: var(--text-primary);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -292,14 +317,15 @@ body.bubbleDockPage .dockRoot {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #252b38;
-  color: #fff;
+  background: var(--bg-active);
+  color: var(--text-primary);
   display: grid;
   place-items: center;
   font-weight: 700;
   font-size: 14px;
   overflow: hidden;
   flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px var(--border-light);
 }
 
 .panelListAvatar img {
@@ -320,8 +346,8 @@ body.bubbleDockPage .dockRoot {
 .panelListBadge {
   min-width: 18px;
   height: 18px;
-  border-radius: 999px;
-  background: #7c5cff;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -338,15 +364,16 @@ body.bubbleDockPage .dockRoot {
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #5c6578;
+  color: var(--text-muted);
   cursor: pointer;
   margin-right: 4px;
   font: inherit;
+  transition: background var(--transition), color var(--transition);
 }
 
 .panelListRemove:hover {
-  background: rgba(255, 77, 106, 0.15);
-  color: #ff4d6a;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .panelEmpty {
@@ -356,7 +383,7 @@ body.bubbleDockPage .dockRoot {
   justify-content: center;
   gap: 8px;
   text-align: center;
-  color: #5c6578;
+  color: var(--text-muted);
   padding: 32px 24px;
   height: 100%;
 }
@@ -364,7 +391,7 @@ body.bubbleDockPage .dockRoot {
 .panelEmpty p {
   margin: 0;
   font-size: 13px;
-  color: #8b95a8;
+  color: var(--text-secondary);
 }
 
 .panelEmpty small {
@@ -373,305 +400,168 @@ body.bubbleDockPage .dockRoot {
 
 .panelLoading {
   align-self: center;
-  color: #5c6578;
+  color: var(--text-muted);
   font-size: 12px;
   padding: 12px;
 }
 
-.pMsgImage {
-  display: block;
-  max-width: 100%;
-  max-height: 180px;
-  border-radius: 8px;
-  margin-top: 4px;
-  cursor: pointer;
-  object-fit: cover;
-}
-
-.pAttach {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #5c6578;
-  font-size: 11px;
-  margin-top: 3px;
-}
-
-/* Messages */
+/* ---- Messages ---- */
 .panelMessages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* Tight default gap between consecutive same-sender bubbles; a larger
+     margin is added on sender-change via the side heuristic below. */
+  gap: 3px;
   min-height: 0;
+  background: var(--bg-primary);
 }
 
+/* Sender-change gap: when the side flips (incoming -> self, or self -> incoming),
+   add extra breathing room. Together with the 3px base gap this yields ~12px
+   before a new sender — macOS Messages rhythm. */
+.pMsg:not(.self) + .pMsg.self,
+.pMsg.self + .pMsg:not(.self) {
+  margin-top: 9px;
+}
+
+/* Incoming bubble — white surface, soft 1px border, tail flattened
+   at bottom-left (macOS Messages style: slightly rounded, not pointed).
+   Soft diffuse black shadow, no colored glow. */
 .pMsg {
-  max-width: 85%;
-  padding: 8px 11px;
-  border-radius: 12px;
-  background: #1a1e28;
-  border: 1px solid #2a3040;
+  max-width: 72%;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);
+  background: var(--other-bubble);
+  border: 1px solid var(--other-border);
   font-size: 13px;
-  color: #e4e8f0;
+  color: var(--other-bubble-text);
+  box-shadow: var(--shadow-sm);
+  align-self: flex-start;
+  transition: box-shadow var(--transition), transform var(--transition);
 }
 
+.pMsg:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Self bubble — teal gradient, white text, tail flattened at bottom-right.
+   Faint inner top highlight gives the bubble a subtle convex depth, the way
+   macOS Messages catches a sliver of light along the top edge. */
 .pMsg.self {
   align-self: flex-end;
-  background: #1e1a3a;
-  border-color: #3d2f7a;
+  background: var(--self-bubble-grad);
+  border-color: var(--self-border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+  color: var(--self-bubble-text);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* Keep the inner highlight on hover (the base .pMsg:hover would drop it). */
+.pMsg.self:hover {
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .pMsg p {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
+/* Sender label (group chats, incoming only) — semibold accent, small.
+   12px reads as a quiet caption above the body (13px) without competing. */
 .pSender {
   display: block;
-  font-size: 10px;
-  color: #7c5cff;
+  font-size: 12px;
+  color: var(--accent);
   margin-bottom: 2px;
   font-weight: 600;
+  letter-spacing: 0.1px;
 }
 
-/* Composer */
+/* ---- Image attachment — mac-style rounded, no inner border ---- */
+.pMsgImage {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: var(--radius-lg);
+  margin-top: 4px;
+  cursor: pointer;
+  object-fit: cover;
+  box-shadow: var(--shadow-xs);
+}
+
+/* ---- Attachment meta line ---- */
+.pAttach {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+/* On teal self bubble, meta reads as translucent white */
+.pMsg.self .pAttach {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* ---- Composer ---- */
 .panelComposer {
   display: flex;
   gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid #2a3040;
-  background: #1a1e28;
+  padding: 10px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-primary);
 }
 
 .panelComposer input {
   flex: 1;
   min-width: 0;
-  padding: 7px 10px;
-  border: 1px solid #2a3040;
-  border-radius: 8px;
-  background: #14171e;
-  color: #e4e8f0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
   font: inherit;
   font-size: 13px;
   outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 .panelComposer input:focus {
-  border-color: #7c5cff;
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .panelComposer input::placeholder {
-  color: #5c6578;
+  color: var(--text-muted);
 }
 
 .panelComposer button {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 8px;
-  background: #7c5cff;
+  border-radius: var(--radius-lg);
+  background: var(--accent);
   color: #fff;
   cursor: pointer;
   font: inherit;
-  transition: background 0.15s;
+  transition: background var(--transition);
 }
 
 .panelComposer button:hover:not(:disabled) {
-  background: #9070ff;
+  background: var(--accent-hover);
 }
 
 .panelComposer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* ===== UI REFRESH ===== */
-.dockCircle {
-  background: var(--surface-raised);
-  border-color: var(--accent);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.dockCircle:hover {
-  border-color: var(--accent-hover);
-}
-
-.dockLetter {
-  color: var(--accent-hover);
-}
-
-.dockBadge {
-  background: linear-gradient(180deg, #ff5b73 0%, var(--danger) 100%);
-  border-color: rgba(255, 255, 255, 0.88);
-}
-
-.dockCount {
-  background: var(--bg-active);
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-
-.panelRoot {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.panelHeader {
-  min-height: 52px;
-  padding: 10px 12px;
-  background: #151713;
-  border-bottom-color: var(--border-light);
-}
-
-.panelHeaderTitle {
-  color: var(--text-primary);
-}
-
-.panelHeaderTitle strong {
-  font-size: 13px;
-  letter-spacing: 0;
-}
-
-.panelHeaderAvatar,
-.panelListAvatar {
-  background: var(--bg-active);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.panelBackBtn,
-.panelActions button {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-}
-
-.panelBackBtn:hover,
-.panelActions button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.panelList {
-  padding: 8px;
-}
-
-.panelListItem {
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-}
-
-.panelListItem:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-light);
-}
-
-.panelListMain {
-  min-width: 0;
-  padding: 8px;
-  color: var(--text-primary);
-}
-
-.panelListBadge {
-  background: var(--danger);
-}
-
-.panelListRemove {
-  color: var(--text-muted);
-}
-
-.panelListRemove:hover {
-  background: rgba(240, 82, 82, 0.16);
-  color: var(--danger);
-}
-
-.panelEmpty,
-.panelLoading,
-.pAttach {
-  color: var(--text-muted);
-}
-
-.panelEmpty p {
-  color: var(--text-secondary);
-}
-
-.panelMessages {
-  gap: 8px;
-  padding: 14px;
-  background: var(--bg-primary);
-}
-
-.pMsg {
-  max-width: 84%;
-  padding: 8px 10px;
-  border-color: var(--other-border);
-  border-radius: 8px 8px 8px 3px;
-  background: var(--other-bubble);
-  color: var(--text-primary);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
-}
-
-.pMsg.self {
-  border-color: var(--self-border);
-  border-radius: 8px 8px 3px 8px;
-  background: var(--self-bubble);
-}
-
-.pMsg p {
-  line-height: 1.45;
-}
-
-.pSender {
-  color: var(--accent-hover);
-}
-
-.pMsgImage {
-  border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.panelComposer {
-  gap: 8px;
-  padding: 10px;
-  background: #151713;
-  border-top-color: var(--border-light);
-}
-
-.panelComposer input {
-  min-height: 36px;
-  padding: 8px 10px;
-  border-color: var(--border-light);
-  border-radius: var(--radius-lg);
-  background: #11130f;
-  color: var(--text-primary);
-}
-
-.panelComposer input:focus {
-  border-color: rgba(20, 184, 166, 0.65);
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
-}
-
-.panelComposer input::placeholder {
-  color: var(--text-muted);
-}
-
-.panelComposer button {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-lg);
-  background: var(--accent);
-  color: #06110f;
-}
-
-.panelComposer button:hover:not(:disabled) {
-  background: var(--accent-hover);
 }

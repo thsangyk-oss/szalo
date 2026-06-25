@@ -1,0 +1,133 @@
+/* ============================================================
+   Szalo — macOS window chrome
+   Traffic-light controls, unified titlebar material, window
+   rounded corners. Imported LAST so it overrides region files.
+   ============================================================ */
+
+/* ---- Window frame: rounded corners + crisp stroke (Win11 rounds
+   frameless opaque windows automatically; this reinforces edges
+   inside the renderer for dev/non-Win11) ---- */
+.appFrame {
+  background: var(--material-window);
+  border-radius: var(--window-radius);
+  overflow: hidden;            /* clips inner content to the rounded corners */
+  box-shadow: var(--window-shadow);
+}
+
+/* ---- Titlebar: macOS unified toolbar (28px, not 38px) ---- */
+.windowTitlebar {
+  position: relative;
+  height: 28px;                 /* mac unified toolbar height */
+  display: flex;
+  align-items: center;
+  padding: 0 14px;              /* 14px left padding puts lights at mac-standard ≈14px from edge */
+  background: var(--material-titlebar);
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border-bottom: 1px solid var(--border-light);
+  /* "Light from above": a 1px inner top highlight on the titlebar */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 50;
+}
+
+/* Drag region sits behind the lights so it never blocks their hover */
+.windowDrag {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* ---- Traffic lights ---- */
+.trafficLights {
+  position: relative;
+  z-index: 2;                    /* above .windowDrag (z-index 1) so hover works */
+  display: inline-flex;
+  align-items: center;           /* vertically centered in the 28px titlebar */
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.tl {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  padding: 0;
+  border: none;
+  cursor: default;
+  background: var(--bg-tertiary);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter var(--transition-fast), transform var(--transition-fast);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+}
+
+/* When the window is focused, the lights take their macOS colors */
+.windowTitlebar:not(.unfocused) .tl.tlClose { background: var(--tl-close); }
+.windowTitlebar:not(.unfocused) .tl.tlMin { background: var(--tl-min); }
+.windowTitlebar:not(.unfocused) .tl.tlMax { background: var(--tl-max); }
+
+/* Glyphs: hidden by default, reveal on group hover with a smooth 120ms fade */
+.trafficLights .tl::after {
+  content: '';
+  opacity: 0;
+  transition: opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--tl-glyph);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  pointer-events: none;
+}
+.trafficLights:hover .tl::after {
+  opacity: 1;
+}
+
+/* Glyph shapes — sized & nudged for optical (not baseline) centering */
+.tl.tlClose::after {
+  content: '\2715';             /* ✕ multiplication-ish cross */
+  font-size: 8px;
+  font-weight: 700;
+  transform: translate(-50%, -50.5px) translateY(0.5px); /* tiny nudge; overridden below */
+}
+/* Reset transform to pure centered with small per-glyph offsets */
+.tl.tlClose::after {
+  transform: translate(-50%, -50%);
+  margin-top: 0.5px;
+}
+.tl.tlMin::after {
+  content: '\2212';             /* − minus sign */
+  font-size: 11px;
+  font-weight: 700;
+  transform: translate(-50%, -50%);
+  margin-top: -0.5px;            /* minus sits slightly low by default; lift it */
+}
+.tl.tlMax::after {
+  content: '\2922';              /* ⤢ — two diagonal arrows (mac fullscreen glyph) */
+  font-size: 9px;
+  font-weight: 700;
+  transform: translate(-50%, -50%);
+  margin-top: 0px;
+}
+
+/* Subtle hover lift + active press on individual lights */
+.tl:hover {
+  transform: scale(1.04);
+}
+.tl:active {
+  transform: scale(0.88);
+}
+
+/* Dim lights when window unfocused (grayscale) — ready for the App
+   to toggle .unfocused on the titlebar; harmless until then. */
+.windowTitlebar.unfocused .tl {
+  background: #c7c7cc;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+/* Legacy single close control (no longer rendered, kept for safety) */
+.windowControl { display: none; }

@@ -1,0 +1,777 @@
+/* ============================================================
+   CHAT AREA — macOS aesthetic override
+   Imported after App.css → equal specificity wins.
+   Scope: header (unified toolbar), info strips (translucent
+   panels), attachment panel, message search, messages list
+   container, sender name, typing, reactions, chat-tools action
+   menu popover. Bubble body appearance is owned by the bubble
+   agent; only the row container + meta are touched.
+   Materials: --material-window / --material-titlebar /
+   --material-panel / --material-popover with vibrancy blur.
+   ============================================================ */
+
+/* ===== CHAT AREA ===== */
+.chat {
+  background:
+    radial-gradient(140% 90% at 50% -10%, rgba(255, 255, 255, 0.35), transparent 55%),
+    var(--material-window);
+}
+
+/* ===== CHAT HEADER (unified toolbar) ===== */
+/* Translucent vibrancy bar that blends with the window titlebar.
+   Opaque fallback via solid color stack keeps the look where
+   backdrop-filter is unavailable. */
+.chatHeader {
+  align-items: center;
+  padding: 10px 20px;
+  background: var(--material-titlebar);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), var(--shadow-xs);
+  flex-wrap: nowrap;
+  position: relative;
+  z-index: 2;
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .chatHeader {
+    background: var(--material-titlebar-opaque);
+  }
+}
+
+.chatHeaderTitle {
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Avatar: full round with a 1px light ring + soft accent halo */
+.chatHeaderAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 0 0 1px var(--border-light), 0 0 0 4px var(--accent-softer), var(--shadow-xs);
+}
+
+.chatHeaderAvatar img {
+  border-radius: var(--radius-pill);
+}
+
+.chatHeaderText h2,
+.chatHeader h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.chatHeaderText p,
+.chatHeader p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 1px 0 0;
+}
+
+/* ===== CHAT TOOLS ===== */
+.chatTools {
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* Translucent vibrancy pill grouping toolbar buttons */
+.iconGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .iconGroup {
+    background: var(--bg-primary);
+  }
+}
+
+.iconGroup .iconButton {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.iconGroup .iconButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Ghost toolbar buttons — transparent base, muted icon, gray hover */
+.chat .iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.chat .iconButton svg {
+  width: 17px;
+  height: 17px;
+}
+
+.chat .iconButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+.chat .iconButton.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-color: transparent;
+}
+
+.chat .iconButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat .iconButton:active:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* ===== ACTION MENU (chat tools popover) ===== */
+/* Bumped specificity (.chat .actionMenuPanel) to override the shared
+   .actionMenuPanel, .composeMenuPanel rule without touching compose. */
+.chat .actionMenu[open] .actionMenuTrigger {
+  background: var(--bg-active);
+  border-color: transparent;
+  color: var(--text-primary);
+}
+
+.chat .actionMenuPanel {
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  min-width: 220px;
+  transform-origin: top right;
+  animation: popoverIn var(--transition-fast) ease-out;
+}
+
+@keyframes popoverIn {
+  from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .chat .actionMenuPanel {
+    background: var(--bg-primary);
+  }
+}
+
+.chat .actionMenuItem {
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.chat .actionMenuItem:hover,
+.chat .actionMenuItem.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat .actionMenuItem svg {
+  color: var(--accent);
+}
+
+/* ===== GROUP / USER INFO ===== */
+/* Translucent raised panel card with vibrancy */
+.groupInfo,
+.userInfo {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  padding: 14px 20px;
+  font-size: 13px;
+  box-shadow: var(--shadow-sm);
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .groupInfo,
+  .userInfo {
+    background: var(--bg-primary);
+  }
+}
+
+.groupInfo p,
+.userInfo p {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+/* Mac-style pill buttons */
+.groupInfo button,
+.userInfo button {
+  justify-self: start;
+  min-height: 30px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid transparent;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background var(--transition), color var(--transition);
+}
+
+.groupInfo button:hover,
+.userInfo button:hover {
+  background: var(--accent-glow);
+  color: var(--accent-hover);
+}
+
+.groupSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.groupSummary strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.groupSummary span {
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.memberStrip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.memberItem {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 56px;
+  max-width: 64px;
+  gap: 4px;
+  color: var(--text-secondary);
+  text-align: center;
+  border-radius: var(--radius-md);
+  padding: 4px 2px;
+  transition: background var(--transition-fast);
+}
+
+.memberItem:hover {
+  background: var(--bg-hover);
+}
+
+.memberAvatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  box-shadow: 0 0 0 1px var(--border-light), 0 0 0 3px var(--accent-softer);
+}
+
+.memberStrip img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.memberStrip small {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.memberItem em {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 6px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--accent-ring);
+  box-shadow: var(--shadow-xs);
+}
+
+.moreMembers {
+  align-self: center;
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  min-height: 36px;
+  line-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-light);
+}
+
+.viewAllMembersBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.viewAllMembersBtn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  color: var(--accent-hover);
+}
+
+.warning {
+  color: var(--warning);
+  font-size: 11px;
+}
+
+.userCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.userAvatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border-light), 0 0 0 3px var(--accent-softer);
+}
+
+.userAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-pill);
+}
+
+.userCard strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.userCard small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 1px;
+}
+
+.userFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.userFacts span {
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* ===== ATTACHMENT PANEL ===== */
+/* Translucent card with soft dashed empty state */
+.attachmentPanel {
+  display: grid;
+  gap: 12px;
+  max-height: 240px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  padding: 14px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .attachmentPanel {
+    background: var(--bg-primary);
+  }
+}
+
+.attachmentPanel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.attachmentPanel header strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.attachmentPanel header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.attachmentPanel header button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.attachmentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.attachmentTile {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  text-decoration: none;
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition), background var(--transition);
+}
+
+.attachmentTile:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  background: var(--bg-primary);
+}
+
+.attachmentPreview {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.attachmentPreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachmentTile strong,
+.attachmentTile small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentTile strong {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.attachmentTile small,
+.emptyAttachment {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.emptyAttachment {
+  display: block;
+  padding: 12px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--accent-softer);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ===== MESSAGE SEARCH ===== */
+/* Mac rounded pill input with focus ring */
+.messageSearch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: min(240px, 30vw);
+  min-height: 34px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  padding: 0 12px;
+  color: var(--text-muted);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.messageSearch:focus-within {
+  border-color: var(--accent-ring);
+  background: var(--bg-primary);
+  box-shadow: var(--ring);
+}
+
+.messageSearch input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.messageSearch input::placeholder {
+  color: var(--text-faint);
+}
+
+/* ===== MESSAGES ===== */
+.messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 28px 28px;
+  min-height: 0;
+}
+
+/* Group consecutive messages from same sender: tighter intra-group gap */
+.messages > .message + .message {
+  margin-top: 2px;
+}
+
+/* Slight extra breathing room when sender changes is handled by sender label */
+.messages > .message.self {
+  margin-top: 8px;
+}
+
+/* Date divider — tiny uppercase faint pill centered on the list */
+.dateDivider {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  margin: 14px 0 6px;
+  padding: 3px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-xs);
+}
+
+/* Status pills: loading / typing / no-result — centered muted pill */
+.loading {
+  align-self: center;
+  border-radius: var(--radius-pill);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  padding: 5px 12px;
+  font-size: 12px;
+  box-shadow: var(--shadow-xs);
+}
+
+/* Typing indicator animation (used by "Đang gõ..." pill) */
+.messages .loading {
+  animation: typingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes typingPulse {
+  0%, 100% { opacity: 0.55; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-1px); }
+}
+
+/* Chat-scoped empty state (airy, centered) */
+.chat .emptyState {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.chat .emptyState p {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.chat .emptyState small {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Sender name (group chat) — semibold accent */
+.message .sender {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 2px;
+  letter-spacing: 0.01em;
+}
+
+.message.self .sender {
+  color: var(--accent-hover);
+}
+
+.message time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.messageMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ===== CLICKABLE SENDER NAME (group chat) ===== */
+.message .sender.clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 2px;
+  transition: text-decoration-color var(--transition), color var(--transition);
+}
+
+.message .sender.clickable:hover {
+  text-decoration-color: var(--accent);
+  color: var(--accent-hover);
+}
+
+/* ===== REACTIONS DISPLAY (under message bubbles) ===== */
+/* Small white pills, 1px light border, soft shadow, hover lift */
+.msgReactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.reactionBubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  cursor: default;
+  line-height: 1;
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.reactionBubble:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
+}
+
+/* Your own reaction — soft accent pill */
+.reactionBubble.mine {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+}
+
+.reactionBubble.mine small {
+  color: var(--accent);
+}
+
+.reactionBubble small {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}

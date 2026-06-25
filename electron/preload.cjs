@@ -20,6 +20,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('window-close')
   },
 
+  minimizeWindow: () => {
+    ipcRenderer.send('window-minimize')
+  },
+
+  toggleMaximizeWindow: () => {
+    ipcRenderer.send('window-toggle-maximize')
+  },
+
+  isWindowMaximized: () => {
+    return ipcRenderer.sendSync('window-is-maximized')
+  },
+
+  onWindowMaximizeChange: (callback) => {
+    const listener = (_event, isMaximized) => callback(isMaximized)
+    ipcRenderer.on('window-maximize-change', listener)
+    return () => ipcRenderer.removeListener('window-maximize-change', listener)
+  },
+
   // Listen for open-thread from main (when user clicks notification)
   onOpenThread: (callback) => {
     const listener = (_event, data) => callback(data)

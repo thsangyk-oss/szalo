@@ -1,51 +1,159 @@
-:root {
-  font: 14px/1.5 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #f0f2ea;
-  background: #10110f;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ============================================================
+   Szalo — Light theme foundation tokens
+   Clean, airy messenger aesthetic. White surfaces, soft gray
+   borders, teal accent, generous radii, layered soft shadows.
+   Variable names kept stable so existing var() usage recolors
+   automatically; region override files (src/ui/*.css) handle
+   the remaining hardcoded dark values.
+   ============================================================ */
 
-  --bg-primary: #10110f;
-  --bg-secondary: #171815;
-  --bg-tertiary: #20211d;
-  --bg-hover: #282a25;
-  --bg-active: #31332d;
-  --border: #34372f;
-  --border-light: #252820;
-  --text-primary: #f0f2ea;
-  --text-secondary: #b3baae;
-  --text-muted: #747d70;
-  --accent: #14b8a6;
-  --accent-hover: #2dd4bf;
-  --accent-dim: rgba(20, 184, 166, 0.14);
-  --accent-glow: rgba(20, 184, 166, 0.26);
-  --danger: #f05252;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --self-bubble: #0f3f38;
-  --self-border: #176e63;
-  --other-bubble: #1e201c;
-  --other-border: #34372f;
-  --surface-raised: #23251f;
-  --surface-warm: #2a281f;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 8px;
-  --radius-xl: 8px;
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+:root {
+  color-scheme: light;
+
+  /* SF on Apple platforms, Inter elsewhere — macOS feel everywhere */
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Inter', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+
+  /* ---- macOS materials (vibrancy / translucency) ---- */
+  /* Opaque fallbacks match the translucent material so it still looks right
+     on platforms without backdrop-filter support. */
+  --material-window: #ececed;          /* window content recessed (macOS sidebar window gray) */
+  --material-sidebar: rgba(246, 246, 248, 0.72);   /* sidebar vibrancy */
+  --material-sidebar-opaque: #f0f0f3;
+  --material-titlebar: rgba(236, 236, 240, 0.78);  /* unified toolbar vibrancy */
+  --material-titlebar-opaque: #e8e8ec;
+  --material-panel: rgba(255, 255, 255, 0.82);     /* raised translucent panel */
+  --material-popover: rgba(255, 255, 255, 0.92);   /* menu / popover vibrancy */
+  --material-overlay: rgba(255, 255, 255, 0.88);
+  --vibrancy-blur: 20px;
+
+  /* ---- Traffic-light buttons (macOS window controls) ---- */
+  --tl-close: #ff5f57;
+  --tl-min: #febc2e;
+  --tl-max: #28c840;
+  --tl-glyph: rgba(0, 0, 0, 0.55);
+
+  /* ---- Window chrome ---- */
+  --window-radius: 12px;
+  --window-stroke: rgba(0, 0, 0, 0.12);
+  --window-shadow: 0 30px 80px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.16);
+
+  /* ---- Surfaces (light) ---- */
+  --bg-primary: #ffffff;          /* raised panels, cards, bubbles */
+  --bg-secondary: #f6f7f9;        /* app frame / recessed areas */
+  --bg-tertiary: #eceef2;         /* deeper recessed / hover tracks */
+  --bg-hover: #f1f3f7;            /* row / item hover */
+  --bg-active: #e6eaef;           /* pressed / active row */
+  --bg-sunken: #eef0f4;           /* inputs, composer well */
+
+  /* ---- Borders ---- */
+  --border: #e3e7ec;
+  --border-light: #eef1f5;
+  --border-strong: #d4d9e0;
+
+  /* ---- Text ---- */
+  --text-primary: #1a1e28;
+  --text-secondary: #5c6578;
+  --text-muted: #8b95a8;
+  --text-faint: #b3bac6;
+
+  /* ---- Accent (teal) ---- */
+  --accent: #0d9488;              /* teal-600 — primary actions */
+  --accent-hover: #0f766e;        /* teal-700 */
+  --accent-active: #115e56;
+  --accent-soft: rgba(13, 148, 136, 0.10);
+  --accent-softer: rgba(13, 148, 136, 0.06);
+  --accent-glow: rgba(13, 148, 136, 0.22);
+  --accent-ring: rgba(13, 148, 136, 0.30);
+  /* Legacy aliases — App.css still references these; keep defined so those
+     declarations don't silently drop. Map to the soft accent surface. */
+  --accent-dim: var(--accent-soft);
+  --accent-darker: var(--accent-hover);
+  --accent-grad: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  --accent-grad-soft: linear-gradient(135deg, rgba(20,184,166,0.16) 0%, rgba(13,148,136,0.10) 100%);
+
+  /* ---- Status ---- */
+  --danger: #e5484d;
+  --danger-soft: rgba(229, 72, 77, 0.10);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.10);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.10);
+
+  /* ---- Bubbles ---- */
+  --self-bubble: #14b8a6;         /* teal self bubble, white text */
+  --self-bubble-grad: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  --self-bubble-text: #ffffff;
+  --self-border: rgba(13, 148, 136, 0.35);
+  --other-bubble: #ffffff;        /* white incoming bubble */
+  --other-bubble-text: #1a1e28;
+  --other-border: #e3e7ec;
+
+  /* ---- Raised surfaces ---- */
+  --surface-raised: #ffffff;
+  --surface-warm: #fffaf3;
+
+  /* ---- Radii ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 999px;
+
+  /* ---- Shadows (soft, layered) ---- */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.07), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.06);
+  --shadow-xl: 0 24px 56px rgba(15, 23, 42, 0.16), 0 8px 20px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 8px 24px rgba(15, 23, 42, 0.14);
+  --shadow: var(--shadow-lg);
+
+  /* ---- Glass (for overlays/titlebar) ---- */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-blur: 14px;
+
+  /* ---- Motion ---- */
   --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Spacing scale (region files may reference) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- Misc ---- */
+  --ring: 0 0 0 3px var(--accent-ring);
+  --divider: 1px solid var(--border);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -53,16 +161,14 @@ body {
   min-height: 100%;
 }
 
-html {
-  height: 100%;
-}
-
 /* Focus ring */
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-sm);
 }
 
 input,
@@ -75,9 +181,10 @@ textarea {
   color: var(--text-primary);
 }
 
+/* Scrollbars — light, slim */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -85,11 +192,17 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-  border: 2px solid var(--bg-secondary);
+  background: #cdd3db;
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: #b3bac6;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

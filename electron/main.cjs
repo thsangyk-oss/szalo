@@ -471,7 +471,7 @@ function createWindow() {
     title: 'Szalo',
     frame: false,
     autoHideMenuBar: true,
-    backgroundColor: '#10110f',
+    backgroundColor: '#ececed',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -497,6 +497,8 @@ function createWindow() {
   mainWindow.on('hide', () => sendMainWindowVisibility('hide'))
   mainWindow.on('focus', () => sendMainWindowVisibility('focus'))
   mainWindow.on('blur', () => sendMainWindowVisibility('blur'))
+  mainWindow.on('maximize', () => mainWindow.webContents.send('window-maximize-change', true))
+  mainWindow.on('unmaximize', () => mainWindow.webContents.send('window-maximize-change', false))
 
   // Open all external links (window.open / target=_blank) in user's default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -780,6 +782,24 @@ ipcMain.on('window-close', (event) => {
   if (window && !window.isDestroyed()) {
     window.close()
   }
+})
+
+// macOS-style window controls: minimize + toggle maximize
+ipcMain.on('window-minimize', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (window && !window.isDestroyed()) window.minimize()
+})
+
+ipcMain.on('window-toggle-maximize', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || window.isDestroyed()) return
+  if (window.isMaximized()) window.unmaximize()
+  else window.maximize()
+})
+
+ipcMain.on('window-is-maximized', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  event.returnValue = !!(window && !window.isDestroyed() && window.isMaximized())
 })
 
 // Bubble IPC

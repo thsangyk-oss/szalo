@@ -89,7 +89,7 @@ export default function Settings({ dismissible, onClose, onSaved }: Props) {
 
         <div className="settingsField">
           <label htmlFor="szalo-key">
-            <KeyRound size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            <KeyRound size={12} />
             API key
           </label>
           <input
@@ -104,8 +104,8 @@ export default function Settings({ dismissible, onClose, onSaved }: Props) {
         </div>
 
         {status.kind !== 'idle' && status.message && (
-          <div className={`settingsStatus ${status.kind === 'ok' ? 'ok' : status.kind === 'warn' ? 'warn' : status.kind === 'err' ? 'err' : ''}`}>
-            {status.kind === 'ok' && <CheckCircle2 size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />}
+          <div className={`settingsStatus ${status.kind}`}>
+            {status.kind === 'ok' && <CheckCircle2 size={14} />}
             {status.message}
           </div>
         )}

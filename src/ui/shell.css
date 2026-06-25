@@ -1,0 +1,286 @@
+/* ============================================================
+   SHELL + ICON RAIL — macOS aesthetic override
+   Imported AFTER App.css, so equal-specificity rules here win.
+   Window frame, titlebar, and traffic-light buttons are owned by
+   chrome.css (imported after this file) — this file does NOT touch
+   .appFrame / .windowTitlebar / .windowDrag / .windowControl /
+   .trafficLights / .tl* selectors. Focus is exclusively on the
+   shell grid, icon rail, app logo, rail buttons, workspace
+   bubbles, rail divider, and rail badges.
+   ============================================================ */
+
+/* ===== SHELL LAYOUT ===== */
+
+/* Shell grid: rail / sidebar / 1fr columns are owned by modals.css
+   (64px rail, 58px on narrow widths). Window content sits on the
+   recessed macOS window material. */
+.shell {
+  background: var(--material-window);
+}
+
+/* ===== ICON RAIL (macOS sidebar accessory) ===== */
+
+/* Translucent vibrancy surface with saturate+blur. Opaque fallback
+   via @supports for environments without backdrop-filter. */
+.iconRail {
+  background: var(--material-sidebar);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border-right: 1px solid var(--border-light);
+  padding: var(--space-3) 0;
+  gap: var(--space-2);
+}
+
+@supports not ((backdrop-filter: saturate(180%) blur(1px))) {
+  .iconRail {
+    background: var(--material-sidebar-opaque);
+  }
+}
+
+/* App logo: refined SF-feel tile. Solid raised surface, soft 1px
+   ring, faint inner top highlight, gentle gradient sheen. Hover
+   lifts 1px with a spring-ish ease and blooms the radius. Quiet. */
+.iconRail .appLogo {
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 42%),
+    var(--surface-raised);
+  box-shadow:
+    var(--shadow-xs),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 0 0 1px var(--border-light);
+  outline: none;
+  object-fit: contain;
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-radius var(--transition),
+    box-shadow var(--transition);
+  will-change: transform;
+}
+
+.iconRail .appLogo:hover {
+  transform: translateY(-1px);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--shadow-sm),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 0 0 1px var(--border);
+}
+
+.iconRail .appLogo:active {
+  transform: translateY(0) scale(0.97);
+  border-radius: var(--radius-md);
+}
+
+/* ===== Rail buttons (macOS ghost toolbar buttons) ===== */
+
+/* 36px ghost button, muted icon, soft gray pill on hover. Active
+   nav gets an accent-soft fill, accent icon, 1px inset accent ring,
+   and a tiny left indicator bar that slides in. Press = scale(0.92).
+   A 120ms transition with a refined ease keeps it calm and mac-quiet. */
+.railButton {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+    color var(--transition),
+    box-shadow var(--transition),
+    transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, background;
+}
+
+.railButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.railButton:active {
+  transform: scale(0.92);
+  background: var(--bg-active);
+  transition-duration: 0.08s;
+}
+
+/* Active nav: soft rounded source-list selection — accent-soft fill,
+   accent icon, inset accent ring (macOS sidebar selection feel). */
+.railButton.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+
+.railButton.active:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* Tiny left indicator bar — slides + scales in for the active nav.
+   Sits just outside the button on the rail surface (Discord-ish,
+   but softened to a calm accent pill). */
+.railButton.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background: var(--accent);
+  transform: translateY(-50%) scaleX(1);
+  transform-origin: left center;
+  transition: transform 0.18s cubic-bezier(0.34, 1.32, 0.64, 1);
+  pointer-events: none;
+}
+
+/* ===== Rail divider (hairline) ===== */
+
+/* 26px centered hairline, low contrast — barely-there group break. */
+.railDivider {
+  width: 26px;
+  height: 1px;
+  background: var(--border-light);
+  margin: var(--space-1) 0;
+  opacity: 0.8;
+  align-self: center;
+}
+
+/* ===== Workspace bubble (Discord-style morph, mac-soft) ===== */
+
+/* Muted surface, 1px ring. Morph-on-hover kept but softened with a
+   subtle scale(1.05) and a gentle spring. Active indicator pill
+   animates its height for a lively-but-quiet feel. */
+.railWorkspace {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  box-shadow: 0 0 0 1px var(--border-light);
+  transition:
+    border-radius var(--transition),
+    background var(--transition),
+    color var(--transition),
+    box-shadow var(--transition),
+    transform 0.18s cubic-bezier(0.34, 1.32, 0.64, 1);
+  will-change: transform, border-radius;
+}
+
+/* Active indicator: 3px rounded accent pill, animated slide-in. */
+.railWorkspace::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  transform: translateY(-50%) scale(0);
+  width: 3px;
+  height: 8px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transition: transform var(--transition), height var(--transition);
+}
+
+/* Hover: gentle fill with workspace color (or accent), rounded lg,
+   soft shadow, subtle scale(1.05) — no harsh ring. */
+.railWorkspace:hover {
+  border-radius: var(--radius-lg);
+  background: var(--workspace-color, var(--accent));
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px) scale(1.05);
+}
+
+.railWorkspace:hover::before {
+  transform: translateY(-50%) scale(1);
+  height: 20px;
+}
+
+.railWorkspace.active {
+  border-radius: var(--radius-lg);
+  background: var(--workspace-color, var(--accent));
+  color: #fff;
+  box-shadow: var(--shadow-xs);
+}
+
+.railWorkspace.active::before {
+  transform: translateY(-50%) scale(1);
+  height: 28px;
+}
+
+.railWorkspace.active:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+
+/* Workspace glyph: muted by default, white when bubble is filled. */
+.railWorkspaceIcon {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: color var(--transition);
+}
+
+.railWorkspace:hover .railWorkspaceIcon,
+.railWorkspace.active .railWorkspaceIcon {
+  color: #fff;
+}
+
+/* ===== Rail badges (macOS small pills) ===== */
+
+/* Workspace badge: pill, danger/accent bg, white text, ring matched
+   to the translucent rail surface. min-width = height so single
+   digits render as a perfect circle; font-weight 700 for clarity. */
+.railWorkspace .badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+  border: 2px solid var(--material-sidebar-opaque);
+  box-shadow: var(--shadow-xs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Rail-button badge: same pill, ring matched to rail surface. */
+.railButton .badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+  border: 2px solid var(--material-sidebar-opaque);
+  box-shadow: var(--shadow-xs);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Accent variant for non-danger counts (e.g. notifications) —
+   opt-in via .badge.accent on the JSX; harmless if unused. */
+.railButton .badge.accent,
+.railWorkspace .badge.accent {
+  background: var(--accent);
+}
+
+.railSpacer {
+  flex: 1;
+}

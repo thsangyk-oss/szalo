@@ -1,0 +1,884 @@
+/* ============================================================
+   Szalo — SIDEBAR region override (macOS source-list)
+   Imported after App.css so equal-specificity selectors win.
+   Mirrors App.css section order: SIDEBAR PANEL → BRAND →
+   NOTIFICATION BUTTON/PANEL → CONTACTS PANEL → LOGIN PANEL →
+   TOOLBAR → DIAGNOSTICS → SEARCH → SEGMENTS → CONVERSATION LIST →
+   CHANNEL sections → CATEGORY tabs.
+   Applies macOS vibrancy materials (translucent sidebar, raised
+   panels, segmented control, rounded source-list selection) on
+   top of the light token foundation in index.css. No DOM/class
+   changes — pure restyle.
+   ============================================================ */
+
+/* ===== SIDEBAR PANEL ===== */
+/* Signature mac look: translucent vibrancy material + saturation/
+   blur backdrop. Opaque fallback for engines without
+   backdrop-filter. 1px hairline right edge, no heavy border. */
+.sidebar {
+  background: var(--material-sidebar);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border-right: 1px solid var(--border-light);
+  /* faint top inner highlight — reads as a lit vibrancy edge */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  position: relative;
+}
+
+@supports not ((-webkit-backdrop-filter: saturate(180%) blur(20px)) or (backdrop-filter: saturate(180%) blur(20px))) {
+  .sidebar { background: var(--material-sidebar-opaque); }
+}
+
+/* Thin overlay scrollbars inside the sidebar — mac feel */
+.sidebar *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.sidebar *::-webkit-scrollbar-thumb {
+  background: rgba(140, 150, 165, 0.35);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.sidebar *::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 130, 145, 0.5);
+  background-clip: padding-box;
+}
+
+/* ===== BRAND HEADER ===== */
+.brand {
+  padding: var(--space-6) var(--space-5);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.brand h1 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.brand p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.socketDot {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 2px var(--material-sidebar-opaque);
+}
+
+.socketDot.online {
+  background: var(--success);
+  box-shadow: 0 0 0 2px var(--material-sidebar-opaque), 0 0 8px var(--success-soft);
+}
+
+.socketDot.offline {
+  background: var(--text-faint);
+}
+
+.workspaceName {
+  gap: var(--space-2);
+}
+
+.workspaceColor {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 2px var(--material-sidebar-opaque), var(--shadow-xs);
+}
+
+/* ===== CHANNEL SECTIONS (Discord-style grouping inside a
+   category workspace) ===== */
+.channelSection {
+  margin-bottom: var(--space-3);
+}
+
+/* macOS source-list section header: tiny uppercase, faint, airy */
+.channelSectionHeader {
+  padding: var(--space-3) var(--space-3) 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+}
+
+.channelSectionHeader small {
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.conversation.channel {
+  grid-template-columns: 24px 1fr auto;
+  min-height: 34px;
+  padding: 5px var(--space-2);
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.channelHash {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-faint);
+  border-radius: var(--radius-xs);
+  transition: color var(--transition), background var(--transition);
+}
+
+.conversation.channel:hover .channelHash,
+.conversation.channel.active .channelHash {
+  color: var(--accent);
+}
+
+/* active channel: rely on the row's accent-soft fill, just tint the glyph */
+.conversation.channel.active .channelHash {
+  background: transparent;
+}
+
+.conversation.channel .conversationText strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.conversation.channel .conversationText small {
+  font-size: 11px;
+}
+
+/* Add-to-channel button — dashed mac ghost button */
+.addToChannelBtn {
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition);
+}
+
+.addToChannelBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-softer);
+}
+
+/* ===== NOTIFICATION BUTTON ===== */
+.notificationButton {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all var(--transition);
+}
+
+.notificationButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.notificationButton.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* mac notification unread pill — soft accent pulse */
+.notificationButton span {
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+  box-shadow: 0 0 0 2px var(--material-sidebar-opaque);
+  animation: notif-pulse 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes notif-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--material-sidebar-opaque), 0 0 0 0 var(--accent-glow); }
+  50%      { box-shadow: 0 0 0 2px var(--material-sidebar-opaque), 0 0 0 4px var(--accent-glow); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notificationButton span { animation: none; }
+}
+
+/* ===== NOTIFICATION PANEL ===== */
+/* Raised translucent card (macOS panel material) */
+.notificationPanel {
+  margin: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  box-shadow: var(--shadow-sm);
+}
+
+@supports not ((-webkit-backdrop-filter: saturate(180%) blur(20px)) or (backdrop-filter: saturate(180%) blur(20px))) {
+  .notificationPanel { background: var(--bg-primary); }
+}
+
+.notificationPanel header strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.notificationPanel header div {
+  gap: var(--space-2);
+}
+
+.notificationPanel header button {
+  min-height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid var(--border-light);
+  transition: all var(--transition);
+}
+
+.notificationPanel header button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.notificationList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* macOS source-list row: rounded, soft, accent-tinted unread */
+.notificationItem {
+  grid-template-columns: 36px 1fr;
+  gap: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: 9px 10px;
+  color: var(--text-primary);
+  transition: background var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.notificationItem:hover {
+  background: var(--bg-hover);
+}
+
+.notificationItem.unread {
+  background: var(--accent-soft);
+}
+
+.notificationIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.notificationIcon.hasAvatar {
+  background: transparent;
+  color: transparent;
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-sm);
+}
+
+.notificationIcon img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}
+
+.notificationItem.unread .notificationIcon {
+  background: var(--accent);
+  color: #fff;
+}
+
+.notificationItem.unread .notificationIcon.hasAvatar {
+  background: transparent;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--shadow-sm);
+}
+
+.notificationBody strong {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notificationBody span {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notificationBody small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== CONTACTS PANEL ===== */
+.contactsPanel {
+  margin: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  box-shadow: var(--shadow-sm);
+}
+
+@supports not ((-webkit-backdrop-filter: saturate(180%) blur(20px)) or (backdrop-filter: saturate(180%) blur(20px))) {
+  .contactsPanel { background: var(--bg-primary); }
+}
+
+.contactsPanel header strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.contactsPanel header button {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition);
+}
+
+.contactsPanel header button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.contactsSummary {
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.contactList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* macOS source-list contact row */
+.contactItem {
+  grid-template-columns: 40px 1fr auto;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition);
+}
+
+.contactItem:hover {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+/* macOS Big Sur rounded-fill selection + accent text (no harsh bar) */
+.contactItem.active {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.contactItem:active {
+  transform: scale(0.98);
+}
+
+.contactAvatar {
+  flex-shrink: 0;
+}
+
+.contactText {
+  gap: 3px;
+}
+
+.contactText strong,
+.contactText small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contactText strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contactText small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.contactItem.active .contactText strong {
+  color: var(--accent);
+}
+
+.emptyState {
+  padding: var(--space-8);
+  color: var(--text-muted);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.emptyState small {
+  font-size: 11px;
+}
+
+/* ===== LOGIN PANEL ===== */
+.loginPanel,
+.empty {
+  gap: var(--space-4);
+  padding: var(--space-8);
+  color: var(--text-secondary);
+}
+
+.loginPanel h2,
+.empty h2 {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.primary {
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+  transition: background var(--transition), transform var(--transition-fast);
+}
+
+.primary:hover {
+  background: var(--accent-hover);
+}
+
+.primary:active {
+  transform: scale(0.98);
+}
+
+.qr {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  padding: var(--space-2);
+  box-shadow: var(--shadow-sm);
+}
+
+.pill {
+  border-radius: var(--radius-pill);
+  background: var(--success-soft);
+  color: var(--success);
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.error {
+  color: var(--danger);
+}
+
+/* ===== TOOLBAR ===== */
+.toolbar {
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.toolbar button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  border: 1px solid transparent;
+  transition: all var(--transition);
+}
+
+.toolbar button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.toolbar button:last-child {
+  color: var(--danger);
+}
+
+.toolbar button:last-child:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.socketState {
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ===== DIAGNOSTICS ===== */
+.diagnostics {
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+}
+
+@supports not ((-webkit-backdrop-filter: saturate(180%) blur(20px)) or (backdrop-filter: saturate(180%) blur(20px))) {
+  .diagnostics { background: var(--bg-primary); }
+}
+
+.diagnostics header strong {
+  color: var(--text-primary);
+}
+
+.diagnostics header button {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition);
+}
+
+.diagnostics header button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.diagGrid {
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--space-3);
+}
+
+.diagGrid span,
+.diagList small {
+  color: var(--text-muted);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.diagGrid strong {
+  color: var(--text-primary);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.diagList {
+  gap: 3px;
+}
+
+.diagList strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.diagList small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== SEARCH ===== */
+/* macOS Sonoma rounded-pill search field: white bg, subtle shadow,
+   accent focus ring. */
+/* macOS Sonoma rounded-pill search field: white bg, subtle shadow,
+   accent focus ring + gentle lift. */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3);
+  padding: 0 var(--space-3);
+  min-height: 30px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  background: var(--bg-primary);
+  color: var(--text-faint);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition), transform var(--transition);
+}
+
+.search:hover {
+  border-color: var(--border);
+}
+
+.search:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-primary);
+  box-shadow: var(--ring), var(--shadow-sm);
+  transform: translateY(-0.5px);
+}
+
+.search svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: color var(--transition);
+}
+
+.search:focus-within svg {
+  color: var(--accent);
+}
+
+.search input {
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* ===== SEGMENTS (macOS segmented control) ===== */
+/* Gray rounded track with hairline dividers; selected segment is
+   a white raised chip with accent text. Equal-width segments. */
+/* ===== SEGMENTS (macOS segmented control) =====
+   Gray recessed track with hairline dividers; selected segment is
+   a white raised chip with accent text that slides on 180ms. */
+.segments {
+  margin: 0 var(--space-3) var(--space-3);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  padding: 3px;
+  box-shadow: inset 0 0 0 1px var(--border-light), inset 0 1px 1px rgba(0, 0, 0, 0.03);
+}
+
+.segments button {
+  min-height: 26px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-left: 1px solid var(--border-light);
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.segments button:first-child {
+  border-left: 0;
+}
+
+.segments button:hover:not(.active) {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.segments button.active {
+  background: var(--bg-primary);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs), 0 0 0 0.5px var(--border-light);
+  border-color: transparent;
+}
+
+.categoryTabs.legacy {
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+}
+
+.categoryTabs.legacy button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-content: center;
+}
+
+/* ===== CONVERSATION LIST (macOS source list) ===== */
+.conversationList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+}
+
+/* Source-list row: macOS Big Sur rounded-fill selection — soft
+   hover, accent-soft fill + accent title on select. No harsh bar. */
+.conversation {
+  grid-template-columns: 36px 1fr auto;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition-fast);
+}
+
+.conversation:hover {
+  background: var(--bg-hover);
+}
+
+.conversation.active {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.conversation.active .conversationText strong {
+  color: var(--accent);
+}
+
+.conversation:active {
+  transform: scale(0.985);
+}
+
+/* Unread row: bolder title (the badge signals unread) */
+.conversation:has(.badge) .conversationText strong {
+  font-weight: 700;
+}
+
+/* Avatars: 36px rounded full with soft 1px hairline ring */
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 0 0 1px var(--border-light);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.conversationText {
+  min-width: 0;
+}
+
+.conversationText strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.conversationText small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.conversationText small em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.conversationText small svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/* Unread badge: small accent pill, white text, vertically centered */
+.badge {
+  align-self: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 5px;
+}
+
+/* ===== CATEGORY tabs in conversation list (mac pill chips) ===== */
+.categoryTabs {
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.categoryTab {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  border: 1px solid var(--border-light);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  cursor: pointer;
+}
+
+.categoryTab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.categoryTab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-glow);
+  font-weight: 600;
+}

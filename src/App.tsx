@@ -18,6 +18,12 @@ import BankCardForm from './BankCardForm'
 import VoiceRecorder from './VoiceRecorder'
 import { parseStyles, applyFormatting } from './formatting'
 import './App.css'
+import './ui/shell.css'
+import './ui/sidebar.css'
+import './ui/chat.css'
+import './ui/composer.css'
+import './ui/modals.css'
+import './ui/chrome.css'
 
 // Electron bridge (available when running inside Electron shell)
 const electron = (window as unknown as { electronAPI?: {
@@ -25,6 +31,10 @@ const electron = (window as unknown as { electronAPI?: {
   setUnreadCount: (count: number) => void
   flashFrame: () => void
   closeWindow?: () => void
+  minimizeWindow?: () => void
+  toggleMaximizeWindow?: () => void
+  isWindowMaximized?: () => boolean
+  onWindowMaximizeChange?: (cb: (isMaximized: boolean) => void) => () => void
   onOpenThread: (cb: (data: { threadId: string; type: string }) => void) => () => void
   onMainWindowVisibility?: (cb: (data: { visible: boolean; focused: boolean; reason?: string }) => void) => () => void
   openBubble: (data: { threadId: string; type: string; name: string; avatar?: string }) => void
@@ -418,6 +428,11 @@ function NotificationIcon({ item }: { item: AppNotification }) {
 
 function App() {
   const [configured, setConfigured] = useState(isConfigured())
+  const [windowMaximized, setWindowMaximized] = useState(() => electron?.isWindowMaximized?.() ?? false)
+  useEffect(() => {
+    const unsub = electron?.onWindowMaximizeChange?.((isMaximized) => setWindowMaximized(isMaximized))
+    return () => { unsub?.() }
+  }, [])
   const [showSettings, setShowSettings] = useState(false)
   const [socket, setSocket] = useState<Socket | null>(null)
   const [status, setStatus] = useState<Status>({ state: 'offline', account: null, selfId: '', qrImage: '', error: '' })
@@ -1503,9 +1518,11 @@ function App() {
       {electron?.isElectron && (
         <header className="windowTitlebar">
           <div className="windowDrag" aria-hidden="true" />
-          <button type="button" className="windowControl close" onClick={() => electron.closeWindow?.()} title="Đóng cửa sổ" aria-label="Đóng cửa sổ">
-            <X size={15} />
-          </button>
+          <div className="trafficLights" role="group" aria-label="Điều khiển cửa sổ">
+            <button type="button" className="tl tlClose" onClick={() => electron.closeWindow?.()} title="Đóng" aria-label="Đóng cửa sổ" />
+            <button type="button" className="tl tlMin" onClick={() => electron.minimizeWindow?.()} title="Thu nhỏ" aria-label="Thu nhỏ cửa sổ" />
+            <button type="button" className="tl tlMax" onClick={() => electron.toggleMaximizeWindow?.()} title={windowMaximized ? 'Bỏ phóng to' : 'Phóng to'} aria-label="Phóng to cửa sổ" data-maximized={windowMaximized ? '' : undefined} />
+          </div>
         </header>
       )}
       <section className="shell">

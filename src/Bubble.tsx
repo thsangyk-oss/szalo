@@ -62,14 +62,14 @@ function attachmentSrc(href?: string) {
 }
 
 const AVATAR_GRADIENTS = [
-  'linear-gradient(135deg, #7c5cff 0%, #b45cff 100%)',
-  'linear-gradient(135deg, #5cb3ff 0%, #5c7cff 100%)',
-  'linear-gradient(135deg, #34d399 0%, #06b6d4 100%)',
-  'linear-gradient(135deg, #fbbf24 0%, #f97316 100%)',
-  'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
-  'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
-  'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
-  'linear-gradient(135deg, #10b981 0%, #84cc16 100%)',
+  'linear-gradient(135deg, #a78bfa 0%, #818cf8 100%)',
+  'linear-gradient(135deg, #60a5fa 0%, #38bdf8 100%)',
+  'linear-gradient(135deg, #5eead4 0%, #22d3ee 100%)',
+  'linear-gradient(135deg, #fcd34d 0%, #fb923c 100%)',
+  'linear-gradient(135deg, #f9a8d4 0%, #f87171 100%)',
+  'linear-gradient(135deg, #c4b5fd 0%, #f0abfc 100%)',
+  'linear-gradient(135deg, #67e8f9 0%, #60a5fa 100%)',
+  'linear-gradient(135deg, #86efac 0%, #bef264 100%)',
 ]
 
 function avatarGradient(seed: string) {

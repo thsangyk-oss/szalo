@@ -1,0 +1,999 @@
+/* ============================================================
+   COMPOSER + INLINE PICKERS — macOS material override
+   Imported after App.css (App.tsx line 24) → equal specificity
+   wins. Translucent vibrancy materials, capsule inputs, ghost
+   toolbar buttons, mac popovers. Opaque fallbacks are the var()
+   values themselves so non-`backdrop-filter` platforms still
+   render a clean light surface.
+   ============================================================ */
+
+/* ===== COMPOSER ===== */
+/* Sits on the chat window recessed material; airy padding, single
+   hairline top border, no heavy shadow. */
+.composer {
+  position: relative; /* anchor for absolute pickers (mention, quick reply, sticker) */
+  border-top: 1px solid var(--border-light);
+  background: var(--material-window);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  padding: var(--space-3) var(--space-4);
+}
+
+.composer.dragActive {
+  background: var(--accent-softer);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--radius-md);
+}
+
+.dropHint {
+  display: none;
+  margin-bottom: var(--space-2);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer.dragActive .dropHint {
+  display: block;
+}
+
+/* Format toolbar above the composeRow (hidden in modern layout;
+   styled here for completeness if re-enabled). mac segmented pills. */
+.formatToolbar {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 var(--space-2);
+  font-size: 13px;
+}
+
+.formatBtn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.formatBtn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.formatBtn.active {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border-color: transparent;
+}
+
+.formatHint {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+/* File queue chips (queued attachments above composer) */
+.fileQueue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.fileQueue span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  max-width: min(300px, 100%);
+  border-radius: var(--radius-md);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  padding: 5px 8px;
+  font-size: 12px;
+  box-shadow: var(--shadow-xs);
+}
+
+.fileQueue strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fileQueue small {
+  color: var(--text-muted);
+}
+
+.fileQueue button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.fileQueue button:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Compose row layout — modern 3-column: actions | input | send */
+.composeRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ===== COMPOSE ACTIONS (mac toolbar — ghost buttons in a translucent pill) ===== */
+.composeActions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  box-shadow: var(--shadow-xs);
+  min-height: 48px;
+  width: max-content;
+  overflow: visible;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.composeActions .formatGroup {
+  display: flex;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.composeDivider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--border-light);
+  flex: 0 0 1px;
+}
+
+.composeActions .composeMenu + .composeMenu {
+  margin-left: 2px;
+}
+
+/* Ghost icon buttons (attach, format trigger) — mac toolbar buttons */
+.attachButton,
+.formatBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.attachButton:hover,
+.attachButton.active {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--accent-hover);
+}
+
+.formatMenuTrigger {
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+/* ===== COMPOSE INPUT (macOS message field — white capsule well) ===== */
+.composeInput {
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-xs);
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.composeInput:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring), var(--shadow-xs);
+}
+
+.composer textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  max-height: 120px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-2xl);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.composer textarea:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-faint);
+}
+
+/* ===== SEND BUTTON (mac filled accent — solid, subtle highlight) ===== */
+.send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: var(--shadow-xs), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition),
+    filter var(--transition), opacity var(--transition), background var(--transition);
+}
+
+.send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.send:active:not(:disabled) {
+  transform: scale(0.96);
+  filter: brightness(0.95);
+}
+
+.send:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-faint);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.send span {
+  display: none;
+}
+
+/* ===== COMPOSE / FORMAT MENU DROPDOWNS (mac popover) ===== */
+.composeMenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.composeMenu summary {
+  list-style: none;
+}
+
+.composeMenu summary::marker,
+.composeMenu summary::-webkit-details-marker {
+  display: none;
+  content: '';
+}
+
+.composeMenu[open] .composeMenuTrigger,
+.composeMenu[open] .formatMenuTrigger {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-hover);
+}
+
+.composeMenuPanel {
+  position: absolute;
+  z-index: 35;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  gap: 3px;
+  min-width: 208px;
+  padding: 6px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  box-shadow: var(--shadow-lg);
+}
+
+.formatMenuPanel {
+  min-width: 174px;
+}
+
+.composeMenuItem {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.composeMenuItem:hover,
+.composeMenuItem.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.composeMenuItem.active {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.composeMenuItem svg {
+  color: var(--accent-hover);
+}
+
+.composeMenuItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== MESSAGE ACTIONS (hover overlay on bubbles) ===== */
+.message {
+  position: relative;
+}
+
+.message:hover .msgActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msgActions {
+  position: absolute;
+  top: -4px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 3px 5px;
+  box-shadow: var(--shadow-md);
+  z-index: 5;
+}
+
+.message.self .msgActions {
+  right: auto;
+  left: 8px;
+}
+
+.msgActionBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.msgActionBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.msgActionBtn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.reactionPicker {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  display: flex;
+  gap: 2px;
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 5px 7px;
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
+}
+
+.reactionPicker button {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.reactionPicker button:hover {
+  background: var(--bg-hover);
+  transform: scale(1.2);
+}
+
+/* ===== REPLY PREVIEW (translucent mac strip) ===== */
+.replyPreview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  margin: 0 0 var(--space-2);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.replyPreview strong {
+  color: var(--text-primary);
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.replyPreview span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyPreview button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.replyPreview button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ===== QUICK REPLY PICKER (mac popover) ===== */
+.quickReplyPicker {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  z-index: 15;
+  overflow: hidden;
+}
+
+.qrpHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.qrpHeader strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.qrpHeader small {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.qrpHeader button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.qrpHeader button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.qrpList {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.qrpItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  transition: background var(--transition-fast);
+}
+
+.qrpItem:hover {
+  background: var(--bg-hover);
+}
+
+.qrpKeyword {
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.qrpTitle {
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qrpEmpty {
+  padding: 18px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* ===== MENTION PICKER (@-autocomplete — mac popover) ===== */
+.mentionPicker {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  z-index: 16;
+  overflow: hidden;
+}
+
+.mpHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.mpHeader strong {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.mpHeader small {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.mpHeader button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.mpHeader button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.mpList {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.mpItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.mpItem:hover {
+  background: var(--bg-hover);
+}
+
+.mpItem.selected {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.mpAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 0.75rem;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-xs);
+}
+
+.mpAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mpName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mpAdmin {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 0.65rem;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mpEmpty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* ===== STICKER PICKER (mac popover + segmented grid) ===== */
+.stickerPicker {
+  position: absolute;
+  bottom: 100%;
+  right: 12px;
+  width: 320px;
+  margin-bottom: 6px;
+  background: var(--material-popover);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  z-index: 15;
+  overflow: hidden;
+}
+
+.spHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.spHeader strong {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.spHeader button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.spHeader button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.spSearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-muted);
+}
+
+.spSearch input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.spSearch input::placeholder {
+  color: var(--text-faint);
+}
+
+.spGrid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.spItem {
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 4px;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.spItem:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+  transform: scale(1.02);
+  box-shadow: var(--shadow-xs);
+}
+
+.spItem:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.spItem img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.spEmpty {
+  grid-column: 1 / -1;
+  padding: 22px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* ===== VOICE RECORDER (compact mac pill) ===== */
+.voiceRecorder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--material-panel);
+  -webkit-backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  backdrop-filter: saturate(180%) blur(var(--vibrancy-blur));
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  margin-bottom: var(--space-2);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.vrPulse {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 0 var(--danger-soft);
+  animation: vrPulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes vrPulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.35); }
+  50% { opacity: 0.55; transform: scale(1.35); box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); }
+}
+
+.vrTime {
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.vrSend,
+.vrCancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.vrSend {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: var(--shadow-xs);
+}
+
+.vrSend:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.vrCancel {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 6px 8px;
+}
+
+.vrCancel:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 760px) {
+  .composeRow {
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 8px;
+  }
+
+  .composeActions {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    width: 100%;
+  }
+
+  .composeActions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .composeInput {
+    grid-column: 1;
+  }
+
+  .send {
+    grid-column: 2;
+  }
+}
