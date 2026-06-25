@@ -151,6 +151,10 @@ function setUnreadForConversation(current: Record<string, number>, conversation:
   return { ...current, [conversation.id]: unread }
 }
 
+function totalUnreadFromMap(unreadMap: Record<string, number>) {
+  return Object.values(unreadMap).reduce((sum, unread) => sum + Math.max(0, unread), 0)
+}
+
 function bubbleMessageWindowSize(unread: number) {
   return Math.min(2000, Math.max(50, unread + 20))
 }
@@ -165,7 +169,7 @@ export function BubbleDock() {
     startX: 0, startY: 0, dragging: false, moved: false
   })
 
-  const totalUnread = threads.reduce((sum, thread) => sum + (unreadMap[thread.threadId] ?? 0), 0)
+  const totalUnread = totalUnreadFromMap(unreadMap)
 
   useEffect(() => {
     document.documentElement.classList.add('bubbleDockPage')
