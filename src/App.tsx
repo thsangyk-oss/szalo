@@ -518,8 +518,7 @@ function NotificationIcon({ item }: { item: AppNotification }) {
 type MessageRowProps = {
   message: ChatMessage
   selectedType?: ThreadKind
-  userConversationById: Map<string, Conversation>
-  onOpenConversation: (conversation: Conversation) => void
+  onOpenSender: (senderId: string, senderName?: string) => void
   onReply: (message: ChatMessage) => void
   onUndone: (messageId: string) => void
   onNotice: (message: string) => void
@@ -528,8 +527,7 @@ type MessageRowProps = {
 const MessageRow = memo(function MessageRow({
   message,
   selectedType,
-  userConversationById,
-  onOpenConversation,
+  onOpenSender,
   onReply,
   onUndone,
   onNotice,
@@ -540,14 +538,7 @@ const MessageRow = memo(function MessageRow({
         className={!message.isSelf && selectedType === 'group' ? 'sender clickable' : 'sender'}
         onClick={() => {
           if (!message.isSelf && selectedType === 'group' && message.senderId) {
-            const existing = userConversationById.get(message.senderId)
-            const target = existing ?? {
-              id: message.senderId,
-              type: 'user' as ThreadKind,
-              name: message.senderName || message.senderId,
-              unread: 0,
-            }
-            onOpenConversation(target as Conversation)
+            onOpenSender(message.senderId, message.senderName)
           }
         }}
       >
@@ -1567,6 +1558,17 @@ function App() {
 
   const openConversationFromMessage = useCallback((conversation: Conversation) => {
     openConversationRef.current(conversation)
+  }, [])
+
+  const openSenderConversation = useCallback((senderId: string, senderName?: string) => {
+    const existing = conversationsRef.current.find((conversation) => conversation.type === 'user' && conversation.id === senderId)
+    const target = existing ?? {
+      id: senderId,
+      type: 'user' as ThreadKind,
+      name: senderName || senderId,
+      unread: 0,
+    }
+    openConversationRef.current(target as Conversation)
   }, [])
 
   const handleMessageUndone = useCallback((id: string) => {
@@ -2640,8 +2642,7 @@ function App() {
                   key={message.id}
                   message={message}
                   selectedType={selected?.type}
-                  userConversationById={userConversationById}
-                  onOpenConversation={openConversationFromMessage}
+                  onOpenSender={openSenderConversation}
                   onReply={setReplyTo}
                   onUndone={handleMessageUndone}
                   onNotice={setNotice}
