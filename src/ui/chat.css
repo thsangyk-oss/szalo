@@ -613,6 +613,29 @@
   min-height: 0;
 }
 
+.loadOlderMessages {
+  align-self: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  box-shadow: var(--shadow-xs);
+}
+
+.loadOlderMessages:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-ring);
+}
+
+.messages > .message {
+  contain: layout paint style;
+}
+
 /* Group consecutive messages from same sender: tighter intra-group gap */
 .messages > .message + .message {
   margin-top: 2px;

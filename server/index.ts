@@ -948,6 +948,40 @@ function normalizeIncoming(message: Message): ChatMessage {
   };
 }
 
+function publicMessageRaw(raw: unknown) {
+  const data = (raw as { data?: Record<string, unknown> } | null | undefined)?.data;
+  if (!data || typeof data !== "object") return undefined;
+
+  const lightData: Record<string, unknown> = {};
+  for (const key of ["content", "msgType", "propertyExt", "cliMsgId"]) {
+    if (data[key] !== undefined) lightData[key] = data[key];
+  }
+  return Object.keys(lightData).length > 0 ? { data: lightData } : undefined;
+}
+
+function publicMessage(message: ChatMessage): ChatMessage {
+  const { raw: _raw, ...rest } = message;
+  const raw = publicMessageRaw(_raw);
+  return raw ? { ...rest, raw } : rest;
+}
+
+function publicMessages(list: ChatMessage[]) {
+  return list.map(publicMessage);
+}
+
+function queryNumber(value: unknown) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function boundedQueryNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = queryNumber(value);
+  if (parsed === null) return fallback;
+  return Math.max(min, Math.min(Math.floor(parsed), max));
+}
+
 /**
  * Fire-and-forget: resolve a user's display name and cache it. Also backfills
  * any messages in the cache that have this userId as senderId with a bare ID
@@ -1124,7 +1158,7 @@ async function afterLogin(api: API) {
       fileCount: normalized.attachments.length,
     });
     upsertMessage(normalized);
-    io.emit("message", normalized);
+    io.emit("message", publicMessage(normalized));
     io.emit("conversations", sortedConversations());
   });
   api.listener.on("typing", (typing) => {
@@ -1201,7 +1235,7 @@ async function afterLogin(api: API) {
       emittedThreads: latestByThread.size,
     });
     for (const message of latestByThread.values()) {
-      io.emit("message", message);
+      io.emit("message", publicMessage(message));
     }
     if (newCount > 0) io.emit("conversations", sortedConversations());
   });
@@ -1921,7 +1955,24 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
   // realtime-only, so tell the client to show a "from when server started"
   // hint when the cache is shallow.
   res.setHeader("X-Szalo-History", type === "group" ? "full" : "realtime-only");
-  res.json(threadMessages);
+  if (req.query.page === "1" || req.query.paged === "1") {
+    const limit = boundedQueryNumber(req.query.limit, 220, 1, 500);
+    const beforeTs = queryNumber(req.query.before ?? req.query.beforeTs);
+    let endIndex = threadMessages.length;
+    if (beforeTs !== null) {
+      const index = threadMessages.findIndex((message) => message.timestamp >= beforeTs);
+      endIndex = index === -1 ? threadMessages.length : index;
+    }
+    const startIndex = Math.max(0, endIndex - limit);
+    const pageMessages = threadMessages.slice(startIndex, endIndex);
+    res.json({
+      messages: publicMessages(pageMessages),
+      hasMore: startIndex > 0,
+      total: threadMessages.length,
+    });
+    return;
+  }
+  res.json(publicMessages(threadMessages));
 });
 
 // === Rich messaging: reaction, undo (recall), sticker ===
@@ -2154,7 +2205,7 @@ app.get("/api/search/messages", (req, res) => {
       if (results.length >= limit) break;
       const searchable = `${msg.senderName ?? ""} ${msg.text} ${msg.attachments.map((a) => a.title ?? "").join(" ")}`.toLowerCase();
       if (searchable.includes(query)) {
-        results.push({ ...msg, conversationName: conversation?.name });
+        results.push({ ...publicMessage(msg), conversationName: conversation?.name });
       }
     }
     if (results.length >= limit) break;
@@ -2440,11 +2491,12 @@ app.post("/api/messages", upload.array("files", 10), async (req, res) => {
       raw: result,
     };
     upsertMessage(sent);
-    io.emit("message", sent);
+    const clientMessage = publicMessage(sent);
+    io.emit("message", clientMessage);
     io.emit("conversations", sortedConversations());
     attempt.status = "sent";
     attempt.result = result;
-    res.json({ ok: true, result, message: sent });
+    res.json({ ok: true, result, message: clientMessage });
   } catch (error) {
     await removeUploadedFiles(files);
     attempt.status = "failed";

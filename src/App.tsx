@@ -1,21 +1,12 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { lazy, memo, Suspense, useDeferredValue } from 'react'
 import { Activity, Bell, BellOff, Calendar, CheckCheck, CircleDot, CreditCard, FileUp, Info, LogOut, MessageCircle, Mic, MoreHorizontal, Paperclip, Pin, PinOff, Plus, Power, RefreshCw, Search, Send, Settings as SettingsIcon, Smile, Tag, X, Users } from 'lucide-react'
 import type { Socket } from 'socket.io-client'
 import { apiUrl, authedInit, getSettings, isConfigured } from './settings'
 import { forceReconnectSocket, subscribeSocket } from './socket'
-import SettingsScreen from './SettingsScreen'
 import MessageActions from './MessageActions'
-import GlobalSearch from './GlobalSearch'
-import QuickReplyPicker from './QuickReplyPicker'
-import FindUser from './FindUser'
-import MentionPicker, { type GroupMember } from './MentionPicker'
-import GroupMembersModal from './GroupMembersModal'
-import StickerPicker from './StickerPicker'
-import RemindersPanel from './RemindersPanel'
-import AutoReplyPanel from './AutoReplyPanel'
-import BankCardForm from './BankCardForm'
-import VoiceRecorder from './VoiceRecorder'
+import type { GroupMember } from './MentionPicker'
 import { parseStyles, applyFormatting } from './formatting'
 import './App.css'
 import './ui/shell.css'
@@ -24,6 +15,18 @@ import './ui/chat.css'
 import './ui/composer.css'
 import './ui/modals.css'
 import './ui/chrome.css'
+
+const SettingsScreen = lazy(() => import('./SettingsScreen'))
+const GlobalSearch = lazy(() => import('./GlobalSearch'))
+const QuickReplyPicker = lazy(() => import('./QuickReplyPicker'))
+const FindUser = lazy(() => import('./FindUser'))
+const MentionPicker = lazy(() => import('./MentionPicker'))
+const GroupMembersModal = lazy(() => import('./GroupMembersModal'))
+const StickerPicker = lazy(() => import('./StickerPicker'))
+const RemindersPanel = lazy(() => import('./RemindersPanel'))
+const AutoReplyPanel = lazy(() => import('./AutoReplyPanel'))
+const BankCardForm = lazy(() => import('./BankCardForm'))
+const VoiceRecorder = lazy(() => import('./VoiceRecorder'))
 
 // Electron bridge (available when running inside Electron shell)
 const electron = (window as unknown as { electronAPI?: {
@@ -53,6 +56,13 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024
 const MAX_FILE_COUNT = 10
 const SOCKET_HEARTBEAT_INTERVAL_MS = 60 * 1000
 const SOCKET_STALE_MS = 5 * 60 * 1000
+const MESSAGE_RENDER_BATCH = 160
+const MESSAGE_RENDER_STEP = 160
+const MESSAGE_PAGE_LIMIT = 220
+const CONVERSATION_RENDER_BATCH = 180
+const CONVERSATION_RENDER_STEP = 180
+const CONTACT_RENDER_BATCH = 180
+const CONTACT_RENDER_STEP = 180
 
 type ThreadKind = 'user' | 'group'
 type ConversationFilter = 'all' | ThreadKind
@@ -108,6 +118,12 @@ type ChatMessage = {
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string; size?: string }>
   reactions?: Record<string, string[]>  // icon → [userId, ...]
   raw?: unknown
+}
+
+type MessagePage = {
+  messages: ChatMessage[]
+  hasMore: boolean
+  total: number
 }
 
 type TypingEvent = {
@@ -261,6 +277,24 @@ function appendMessage(list: ChatMessage[], message: ChatMessage) {
   return [...list, message]
 }
 
+function mergeMessages(existing: ChatMessage[], incoming: ChatMessage[]) {
+  if (incoming.length === 0) return existing
+  const byId = new Map(existing.map((message) => [message.id, message]))
+  let changed = false
+  for (const message of incoming) {
+    const current = byId.get(message.id)
+    if (!current) {
+      byId.set(message.id, message)
+      changed = true
+    } else if (current !== message) {
+      byId.set(message.id, { ...current, ...message })
+      changed = true
+    }
+  }
+  if (!changed) return existing
+  return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp)
+}
+
 function latestMessageTimestamp(list: ChatMessage[]) {
   return list.reduce((latest, message) => Math.max(latest, message.timestamp || 0), 0)
 }
@@ -300,7 +334,58 @@ function updateMessageStatus(list: ChatMessage[], event: MessageStatusEvent) {
 }
 
 function markConversationRead(list: Conversation[], threadId: string) {
-  return list.map((conversation) => conversation.id === threadId ? { ...conversation, unread: 0, manualUnread: false } : conversation)
+  let changed = false
+  const updated = list.map((conversation) => {
+    if (conversation.id !== threadId) return conversation
+    if (conversation.unread === 0 && !conversation.manualUnread) return conversation
+    changed = true
+    return { ...conversation, unread: 0, manualUnread: false }
+  })
+  return changed ? updated : list
+}
+
+function sameStatus(a: Status, b: Status) {
+  return a.state === b.state
+    && a.selfId === b.selfId
+    && a.qrImage === b.qrImage
+    && a.error === b.error
+    && a.serverStartedAt === b.serverStartedAt
+    && (a.counts?.total ?? 0) === (b.counts?.total ?? 0)
+    && (a.counts?.users ?? 0) === (b.counts?.users ?? 0)
+    && (a.counts?.groups ?? 0) === (b.counts?.groups ?? 0)
+}
+
+function sameConversation(a: Conversation, b: Conversation) {
+  return a.id === b.id
+    && a.type === b.type
+    && a.name === b.name
+    && a.avatar === b.avatar
+    && a.lastMessage === b.lastMessage
+    && a.lastTimestamp === b.lastTimestamp
+    && a.unread === b.unread
+    && a.manualUnread === b.manualUnread
+    && a.muted === b.muted
+    && a.pinned === b.pinned
+}
+
+function sameConversationList(a: Conversation[], b: Conversation[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index += 1) {
+    if (!sameConversation(a[index], b[index])) return false
+  }
+  return true
+}
+
+function replaceConversation(list: Conversation[], nextConversation: Conversation) {
+  let changed = false
+  const updated = list.map((conversation) => {
+    if (conversation.id !== nextConversation.id) return conversation
+    if (sameConversation(conversation, nextConversation)) return conversation
+    changed = true
+    return nextConversation
+  })
+  return changed ? updated : list
 }
 
 function groupConversationsFirst(list: Conversation[]) {
@@ -426,6 +511,136 @@ function NotificationIcon({ item }: { item: AppNotification }) {
   )
 }
 
+type MessageRowProps = {
+  message: ChatMessage
+  selectedType?: ThreadKind
+  userConversationById: Map<string, Conversation>
+  onOpenConversation: (conversation: Conversation) => void
+  onReply: (message: ChatMessage) => void
+  onUndone: (messageId: string) => void
+  onNotice: (message: string) => void
+}
+
+const MessageRow = memo(function MessageRow({
+  message,
+  selectedType,
+  userConversationById,
+  onOpenConversation,
+  onReply,
+  onUndone,
+  onNotice,
+}: MessageRowProps) {
+  return (
+    <article className={message.isSelf ? 'message self' : 'message'}>
+      <span
+        className={!message.isSelf && selectedType === 'group' ? 'sender clickable' : 'sender'}
+        onClick={() => {
+          if (!message.isSelf && selectedType === 'group' && message.senderId) {
+            const existing = userConversationById.get(message.senderId)
+            const target = existing ?? {
+              id: message.senderId,
+              type: 'user' as ThreadKind,
+              name: message.senderName || message.senderId,
+              unread: 0,
+            }
+            onOpenConversation(target as Conversation)
+          }
+        }}
+      >
+        {message.isSelf ? 'Bạn' : message.senderName || message.threadId}
+      </span>
+      {message.text && <p>{message.text}</p>}
+      {message.attachments.map((attachment, index) => {
+        const url = attachmentUrl(attachment.href, attachment.title)
+        const preview = attachment.thumb ? attachmentUrl(attachment.thumb, attachment.title) : (isImageAttachment(attachment) ? url : undefined)
+        const isImage = isImageAttachment(attachment)
+        const externalUrl = attachment.href && attachment.href.startsWith('http') ? attachment.href : url
+        if (isImage && preview) {
+          return (
+            <img key={`${attachment.href}-${index}`} className="msgImage" src={preview} alt={attachment.title || ''} onContextMenu={(event) => {
+              event.preventDefault()
+              const original = attachment.href || attachment.thumb
+              if (original) navigator.clipboard.writeText(original).then(() => onNotice('Đã copy link ảnh')).catch(() => onNotice('Không copy được link'))
+            }} onClick={(event) => {
+              event.preventDefault()
+              if (externalUrl) window.open(externalUrl, '_blank', 'noopener,noreferrer')
+            }} />
+          )
+        }
+        return externalUrl ? (
+          <a key={`${attachment.href}-${index}`} href={externalUrl} target="_blank" rel="noreferrer" className="fileAttachment">
+            <FileUp size={15} /> {attachment.title || 'Tệp đính kèm'} {attachment.size ? `(${attachment.size} bytes)` : ''}
+          </a>
+        ) : (
+          <span className="fileAttachment" key={`${attachment.title}-${index}`}>
+            <FileUp size={15} /> {attachment.title || 'Tệp đính kèm'} {attachment.size ? `(${attachment.size} bytes)` : ''}
+          </span>
+        )
+      })}
+      {message.reactions && Object.keys(message.reactions).length > 0 && (
+        <span className="msgReactions">
+          {Object.entries(message.reactions).map(([icon, users]) => (
+            <span key={icon} className="reactionBubble" title={users.join(', ')}>
+              {icon} <small>{users.length}</small>
+            </span>
+          ))}
+        </span>
+      )}
+      <span className="messageMeta">
+        <time>{new Date(message.timestamp).toLocaleString('vi-VN')}</time>
+        {message.isSelf && deliveryLabel(message.deliveryStatus) && (
+          <span className="receipt"><CheckCheck size={13} /> {deliveryLabel(message.deliveryStatus)}</span>
+        )}
+      </span>
+      <MessageActions message={message} onReply={onReply} onUndone={onUndone} />
+    </article>
+  )
+})
+
+type ConversationRowProps = {
+  conversation: Conversation
+  active: boolean
+  channel?: boolean
+  typing: boolean
+  onOpenConversation: (conversation: Conversation) => void
+}
+
+const ConversationRow = memo(function ConversationRow({
+  conversation,
+  active,
+  channel = false,
+  typing,
+  onOpenConversation,
+}: ConversationRowProps) {
+  const className = channel
+    ? active ? 'conversation channel active' : 'conversation channel'
+    : active ? 'conversation active' : 'conversation'
+
+  return (
+    <button
+      className={className}
+      onClick={() => onOpenConversation(conversation)}
+    >
+      {channel ? (
+        <span className="channelHash">{conversation.type === 'group' ? '#' : '@'}</span>
+      ) : (
+        <span className="avatar" style={!conversation.avatar ? { background: avatarGradient(conversation.id) } : undefined}>
+          {conversation.avatar ? <img src={conversation.avatar} alt="" /> : conversation.type === 'group' ? <Users size={16} /> : conversation.name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <span className="conversationText">
+        <strong>{conversation.name}</strong>
+        <small>
+          {conversation.pinned && <Pin size={11} />}
+          {conversation.muted && <BellOff size={11} />}
+          {typing ? <em>Đang gõ...</em> : (conversation.lastMessage || (channel ? ' ' : conversation.id))}
+        </small>
+      </span>
+      {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
+    </button>
+  )
+})
+
 function App() {
   const [configured, setConfigured] = useState(isConfigured())
   const [windowMaximized, setWindowMaximized] = useState(() => electron?.isWindowMaximized?.() ?? false)
@@ -439,6 +654,11 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [contacts, setContacts] = useState<ZaloContact[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [visibleConversationLimit, setVisibleConversationLimit] = useState(CONVERSATION_RENDER_BATCH)
+  const [visibleContactLimit, setVisibleContactLimit] = useState(CONTACT_RENDER_BATCH)
+  const [visibleMessageLimit, setVisibleMessageLimit] = useState(MESSAGE_RENDER_BATCH)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [selected, setSelected] = useState<Conversation | null>(null)
   const [filter, setFilter] = useState('')
   const [contactFilter, setContactFilter] = useState('')
@@ -486,13 +706,14 @@ function App() {
   const selectedRef = useRef<Conversation | null>(null)
   const conversationsRef = useRef<Conversation[]>([])
   const messagesRef = useRef<ChatMessage[]>([])
+  const openConversationRef = useRef<(conversation: Conversation, refresh?: boolean) => void>(() => undefined)
   const mainWindowVisibleRef = useRef(!document.hidden && document.hasFocus())
   // Bookkeeping for reconnect recovery and notification dedupe.
   const conversationTimestampsRef = useRef<Map<string, number>>(new Map())
   const conversationSnapshotReadyRef = useRef(false)
   const handledNotificationIdsRef = useRef<Set<string>>(new Set())
   const messageSyncInFlightRef = useRef<Set<string>>(new Set())
-  const lastSocketActivityRef = useRef(Date.now())
+  const lastSocketActivityRef = useRef(0)
   // Threads whose history we've already force-refreshed this session, so we
   // only hit Zalo for fresh history on the first open of each thread.
   const refreshedThreadsRef = useRef<Set<string>>(new Set())
@@ -507,27 +728,85 @@ function App() {
   const [showChannelPicker, setShowChannelPicker] = useState(false)
   const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set())
   const [pickerSearch, setPickerSearch] = useState('')
+  const deferredFilter = useDeferredValue(filter)
+  const deferredContactFilter = useDeferredValue(contactFilter)
+  const deferredMessageFilter = useDeferredValue(messageFilter)
+  const deferredPickerSearch = useDeferredValue(pickerSearch)
+
+  const selectedCategoryData = useMemo(() => {
+    return selectedCategory ? categories.find((category) => category.id === selectedCategory) ?? null : null
+  }, [categories, selectedCategory])
+
+  const selectedCategoryThreadIds = useMemo(() => {
+    return new Set(selectedCategoryData?.threadIds ?? [])
+  }, [selectedCategoryData])
 
   const filteredConversations = useMemo(() => {
-    const query = filter.trim().toLowerCase()
+    const query = deferredFilter.trim().toLowerCase()
     const matched = conversations.filter((item) => {
       const matchesType = conversationFilter === 'all' || item.type === conversationFilter
       const matchesQuery = !query || item.name.toLowerCase().includes(query) || item.id.includes(query)
-      const matchesCategory = !selectedCategory || categories.find((c) => c.id === selectedCategory)?.threadIds.includes(item.id)
+      const matchesCategory = !selectedCategory || selectedCategoryThreadIds.has(item.id)
       return matchesType && matchesQuery && matchesCategory
     })
     return selectedCategory ? groupConversationsFirst(matched) : sortConversationsByLatest(matched)
-  }, [conversationFilter, conversations, filter, selectedCategory, categories])
+  }, [conversationFilter, conversations, deferredFilter, selectedCategory, selectedCategoryThreadIds])
 
-  const filteredContacts = useMemo(() => {
-    const query = contactFilter.trim().toLowerCase()
-    return sortContacts(contacts).filter((contact) => {
+  const hiddenConversationCount = Math.max(0, filteredConversations.length - visibleConversationLimit)
+  const visibleConversations = useMemo(() => {
+    if (hiddenConversationCount === 0) return filteredConversations
+    return filteredConversations.slice(0, visibleConversationLimit)
+  }, [filteredConversations, hiddenConversationCount, visibleConversationLimit])
+
+  const categoryUnreadById = useMemo(() => {
+    const unreadByThread = new Map(conversations.map((conversation) => [conversation.id, conversation.unread ?? 0]))
+    const unreadByCategory = new Map<string, number>()
+    for (const category of categories) {
+      let unread = 0
+      for (const threadId of category.threadIds) unread += unreadByThread.get(threadId) ?? 0
+      unreadByCategory.set(category.id, unread)
+    }
+    return unreadByCategory
+  }, [categories, conversations])
+
+  const workspaceConversations = useMemo(() => {
+    if (!selectedCategory) return { groups: [] as Conversation[], users: [] as Conversation[] }
+    const groups: Conversation[] = []
+    const users: Conversation[] = []
+    for (const conversation of visibleConversations) {
+      if (conversation.type === 'group') groups.push(conversation)
+      else users.push(conversation)
+    }
+    return { groups, users }
+  }, [visibleConversations, selectedCategory])
+
+  const contactSearchRows = useMemo(() => {
+    return contacts.map((contact) => {
       const id = contactId(contact)
       const name = contactName(contact)
       const phone = String(contact.phoneNumber ?? '')
-      return !query || name.toLowerCase().includes(query) || id.includes(query) || phone.includes(query)
+      return {
+        contact,
+        id,
+        name,
+        searchText: `${name} ${id} ${phone}`.toLowerCase(),
+      }
     })
-  }, [contactFilter, contacts])
+  }, [contacts])
+
+  const filteredContacts = useMemo(() => {
+    const query = deferredContactFilter.trim().toLowerCase()
+    if (!query) return contacts
+    return contactSearchRows
+      .filter((row) => row.searchText.includes(query))
+      .map((row) => row.contact)
+  }, [contactSearchRows, contacts, deferredContactFilter])
+
+  const hiddenContactCount = Math.max(0, filteredContacts.length - visibleContactLimit)
+  const visibleContacts = useMemo(() => {
+    if (hiddenContactCount === 0) return filteredContacts
+    return filteredContacts.slice(0, visibleContactLimit)
+  }, [filteredContacts, hiddenContactCount, visibleContactLimit])
 
   const userConversationById = useMemo(() => {
     const map = new Map<string, Conversation>()
@@ -537,12 +816,19 @@ function App() {
     return map
   }, [conversations])
 
-  const userCount = conversations.filter((item) => item.type === 'user').length
-  const groupCount = conversations.filter((item) => item.type === 'group').length
-  const unreadCount = conversations.reduce((total, item) => total + item.unread, 0)
-  const unreadNotificationCount = notifications.filter((item) => !item.read).length
+  const conversationStats = useMemo(() => {
+    return conversations.reduce((stats, item) => {
+      if (item.type === 'user') stats.userCount += 1
+      else stats.groupCount += 1
+      stats.unreadCount += item.unread
+      return stats
+    }, { userCount: 0, groupCount: 0, unreadCount: 0 })
+  }, [conversations])
+  const { userCount, groupCount, unreadCount } = conversationStats
+
+  const unreadNotificationCount = useMemo(() => notifications.reduce((count, item) => count + (item.read ? 0 : 1), 0), [notifications])
   const filteredMessages = useMemo(() => {
-    const query = messageFilter.trim().toLowerCase()
+    const query = deferredMessageFilter.trim().toLowerCase()
     if (!query) return messages
     return messages.filter((message) => {
       const attachmentText = message.attachments
@@ -550,9 +836,19 @@ function App() {
         .join(' ')
       return `${message.senderName ?? ''} ${message.text} ${attachmentText}`.toLowerCase().includes(query)
     })
-  }, [messageFilter, messages])
+  }, [deferredMessageFilter, messages])
+
+  const hiddenMessageCount = Math.max(0, filteredMessages.length - visibleMessageLimit)
+  const visibleMessages = useMemo(() => {
+    if (hiddenMessageCount === 0) return filteredMessages
+    return filteredMessages.slice(hiddenMessageCount)
+  }, [filteredMessages, hiddenMessageCount])
+  const lastRenderedMessageId = visibleMessages[visibleMessages.length - 1]?.id ?? ''
+
+  const attachmentCount = useMemo(() => messages.reduce((total, message) => total + message.attachments.length, 0), [messages])
 
   const attachmentItems = useMemo(() => {
+    if (!showAttachments) return []
     return messages
       .flatMap((message) => message.attachments.map((attachment, index) => {
         const url = attachmentUrl(attachment.href, attachment.title)
@@ -560,14 +856,25 @@ function App() {
         return { message, attachment, index, url, preview, isImage: isImageAttachment(attachment) }
       }))
       .reverse()
-  }, [messages])
+  }, [messages, showAttachments])
 
-  const loadConversationMessages = useCallback((conversation: Pick<Conversation, 'id' | 'type'>, options: { refresh?: boolean; markRead?: boolean } = {}) => {
+  const loadConversationMessages = useCallback((conversation: Pick<Conversation, 'id' | 'type'>, options: { refresh?: boolean; markRead?: boolean; limit?: number; beforeTs?: number; page?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (options.refresh) params.set('refresh', '1')
     if (options.markRead === false) params.set('markRead', '0')
+    if (options.page !== false) params.set('page', '1')
+    if (options.limit) params.set('limit', String(options.limit))
+    if (options.beforeTs) params.set('before', String(options.beforeTs))
     const query = params.toString()
-    return apiJson<ChatMessage[]>(`/api/messages/${conversation.type}/${conversation.id}${query ? `?${query}` : ''}`)
+    return apiJson<MessagePage | ChatMessage[]>(`/api/messages/${conversation.type}/${conversation.id}${query ? `?${query}` : ''}`)
+      .then((payload) => {
+        if (Array.isArray(payload)) return { messages: payload, hasMore: false, total: payload.length }
+        return {
+          messages: Array.isArray(payload.messages) ? payload.messages : [],
+          hasMore: Boolean(payload.hasMore),
+          total: Number(payload.total ?? payload.messages?.length ?? 0),
+        }
+      })
   }, [])
 
   const markThreadSeen = useCallback((threadId: string, type: ThreadKind) => {
@@ -583,6 +890,10 @@ function App() {
       { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, ts: Date.now(), read: false },
       ...current,
     ].slice(0, 60))
+  }, [])
+
+  const setStatusIfChanged = useCallback((nextStatus: Status) => {
+    setStatus((current) => sameStatus(current, nextStatus) ? current : nextStatus)
   }, [])
 
   const markNotificationHandled = useCallback((messageId: string) => {
@@ -627,12 +938,14 @@ function App() {
       const data = await loadConversationMessages(conversation, {
         refresh: options.refresh,
         markRead: options.markRead ?? false,
+        limit: MESSAGE_PAGE_LIMIT,
       })
-      const list = Array.isArray(data) ? data : []
+      const list = data.messages
       const stillSelected = selectedRef.current?.id === conversation.id
 
       if (options.updateSelected && stillSelected) {
-        setMessages(list)
+        setMessages((current) => mergeMessages(current, list))
+        setHasOlderMessages((current) => current || data.hasMore)
       }
       if (options.markRead && stillSelected) {
         setConversations((current) => markConversationRead(current, conversation.id))
@@ -694,13 +1007,15 @@ function App() {
     const wasReady = conversationSnapshotReadyRef.current
     const currentSelected = selectedRef.current
     const selectedThreadVisible = Boolean(currentSelected && mainWindowVisibleRef.current && !document.hidden)
-    setConversations(selectedThreadVisible && currentSelected ? markConversationRead(items, currentSelected.id) : items)
+    const nextConversations = selectedThreadVisible && currentSelected ? markConversationRead(items, currentSelected.id) : items
+    setConversations((current) => sameConversationList(current, nextConversations) ? current : nextConversations)
     if (wasReady) reconcileConversations(items, previousTimestamps)
 
     if (currentSelected) {
       const updated = items.find((item) => item.id === currentSelected.id)
       if (updated && (updated.name !== currentSelected.name || updated.avatar !== currentSelected.avatar || selectedThreadVisible)) {
-        setSelected(selectedThreadVisible ? { ...updated, unread: 0, manualUnread: false } : updated)
+        const nextSelected = selectedThreadVisible ? { ...updated, unread: 0, manualUnread: false } : updated
+        setSelected((current) => current && sameConversation(current, nextSelected) ? current : nextSelected)
       }
     }
   }, [reconcileConversations])
@@ -712,6 +1027,10 @@ function App() {
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  useEffect(() => {
+    lastSocketActivityRef.current = Date.now()
+  }, [])
 
   useEffect(() => {
     conversationsRef.current = conversations
@@ -772,7 +1091,7 @@ function App() {
       lastSocketActivityRef.current = Date.now()
       setSocketConnected(true)
       reportClientEvent('socket-connect', { socketId: socket.id })
-      void apiJson<Status>('/api/status').then(setStatus).catch(() => undefined)
+      void apiJson<Status>('/api/status').then(setStatusIfChanged).catch(() => undefined)
       void apiJson<Conversation[]>('/api/conversations').then(applyConversationSnapshot).catch(() => undefined)
     }
     const handleDisconnect = (reason: string) => {
@@ -785,7 +1104,7 @@ function App() {
     }
     const handleStatus = (nextStatus: Status) => {
       lastSocketActivityRef.current = Date.now()
-      setStatus(nextStatus)
+      setStatusIfChanged(nextStatus)
     }
     const handleConversations = (items: Conversation[]) => {
       lastSocketActivityRef.current = Date.now()
@@ -833,7 +1152,11 @@ function App() {
     const handleTyping = (typing: TypingEvent) => {
       lastSocketActivityRef.current = Date.now()
       if (typing.isSelf) return
-      setTypingThreads((current) => ({ ...current, [typing.threadId]: Date.now() + 3500 }))
+      const expiresAt = Date.now() + 3500
+      setTypingThreads((current) => {
+        if ((current[typing.threadId] ?? 0) >= expiresAt - 250) return current
+        return { ...current, [typing.threadId]: expiresAt }
+      })
     }
     const handleUndo = (data: { threadId?: string; msgId?: string; cliMsgId?: string }) => {
       lastSocketActivityRef.current = Date.now()
@@ -881,12 +1204,21 @@ function App() {
       setGroupDetail(null)
       setUserDetail(null)
       setShowAttachments(false)
+      setVisibleMessageLimit(MESSAGE_RENDER_BATCH)
+      setHasOlderMessages(false)
+      setLoadingOlderMessages(false)
       setMessageFilter('')
       setOpening(true)
       reportClientEvent('notification-open-thread', { threadId, type: safeType })
-      loadConversationMessages({ id: threadId, type: safeType }, { markRead: true })
-        .then((data) => setMessages(Array.isArray(data) ? data : []))
-        .catch(() => setMessages([]))
+      loadConversationMessages({ id: threadId, type: safeType }, { markRead: true, limit: MESSAGE_PAGE_LIMIT })
+        .then((data) => {
+          setMessages(data.messages)
+          setHasOlderMessages(data.hasMore)
+        })
+        .catch(() => {
+          setMessages([])
+          setHasOlderMessages(false)
+        })
         .finally(() => setOpening(false))
       void markThreadSeen(threadId, safeType)
     })
@@ -907,7 +1239,7 @@ function App() {
     if (socket.connected) {
       handleConnect()
     } else {
-      apiJson<Status>('/api/status').then(setStatus).catch((error: Error) => setNotice(error.message))
+      apiJson<Status>('/api/status').then(setStatusIfChanged).catch((error: Error) => setNotice(error.message))
       apiJson<Conversation[]>('/api/conversations').then(applyConversationSnapshot).catch(() => undefined)
     }
     return () => {
@@ -927,19 +1259,30 @@ function App() {
       window.removeEventListener('error', handleBrowserError)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
-  }, [applyConversationSnapshot, configured, loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage, pushNotification, socket])
+  }, [applyConversationSnapshot, configured, loadConversationMessages, markNotificationHandled, markThreadSeen, notifyIncomingMessage, pushNotification, setStatusIfChanged, socket])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const now = Date.now()
-      setTypingThreads((current) => Object.fromEntries(Object.entries(current).filter(([, expires]) => expires > now)))
+      setTypingThreads((current) => {
+        let changed = false
+        const next: Record<string, number> = {}
+        for (const [threadId, expires] of Object.entries(current)) {
+          if (expires > now) {
+            next[threadId] = expires
+          } else {
+            changed = true
+          }
+        }
+        return changed ? next : current
+      })
     }, 1000)
     return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages])
+    endRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+  }, [lastRenderedMessageId, selected?.id])
 
   useEffect(() => {
     document.title = unreadCount > 0 ? `(${unreadCount}) Szalo` : 'Szalo'
@@ -964,7 +1307,7 @@ function App() {
           apiJson<Conversation[]>('/api/conversations'),
         ])
         if (stopped) return
-        setStatus(nextStatus)
+        setStatusIfChanged(nextStatus)
         applyConversationSnapshot(nextConversations)
         lastSocketActivityRef.current = Date.now()
       } catch (error) {
@@ -979,7 +1322,7 @@ function App() {
       stopped = true
       window.clearInterval(timer)
     }
-  }, [applyConversationSnapshot, configured, socket])
+  }, [applyConversationSnapshot, configured, setStatusIfChanged, socket])
 
   useEffect(() => {
     if (!configured || status.state !== 'online') return
@@ -1031,7 +1374,7 @@ function App() {
       setMessages([])
       setConversations([])
       setContacts([])
-      setContactFilter('')
+      updateContactSearch('')
       setShowContacts(false)
       setHealth(null)
     } catch (error) {
@@ -1052,12 +1395,16 @@ function App() {
     }
   }
 
-  async function loadGroupDetail(threadId: string) {
+  const loadGroupDetail = useCallback(async (threadId: string) => {
     setGroupDetailLoading(true)
     try {
       const detail = await apiJson<GroupDetail>(`/api/groups/${threadId}`)
       setGroupDetail(detail)
-      setConversations((current) => current.map((item) => item.id === detail.id ? { ...item, name: detail.name || item.name, avatar: detail.avatar || item.avatar } : item))
+      setConversations((current) => {
+        const existing = current.find((item) => item.id === detail.id)
+        if (!existing) return current
+        return replaceConversation(current, { ...existing, name: detail.name || existing.name, avatar: detail.avatar || existing.avatar })
+      })
       setSelected((current) => current?.id === detail.id ? { ...current, name: detail.name || current.name, avatar: detail.avatar || current.avatar } : current)
       reportClientEvent('group-detail', { threadId, members: detail.members.length, truncated: detail.truncated, warning: detail.warning || '' })
     } catch (error) {
@@ -1066,15 +1413,19 @@ function App() {
     } finally {
       setGroupDetailLoading(false)
     }
-  }
+  }, [])
 
-  async function loadUserDetail(threadId: string) {
+  const loadUserDetail = useCallback(async (threadId: string) => {
     setUserDetailLoading(true)
     try {
       const detail = await apiJson<UserDetail>(`/api/users/${threadId}`)
       setUserDetail(detail)
       const displayName = detail.displayName || detail.zaloName || detail.id
-      setConversations((current) => current.map((item) => item.id === detail.id ? { ...item, name: displayName, avatar: detail.avatar || item.avatar } : item))
+      setConversations((current) => {
+        const existing = current.find((item) => item.id === detail.id)
+        if (!existing) return current
+        return replaceConversation(current, { ...existing, name: displayName, avatar: detail.avatar || existing.avatar })
+      })
       setSelected((current) => current?.id === detail.id ? { ...current, name: displayName, avatar: detail.avatar || current.avatar } : current)
       reportClientEvent('user-detail', { threadId, hasPhone: Boolean(detail.phoneNumber), isFriend: detail.isFriend, isBlocked: detail.isBlocked })
     } catch (error) {
@@ -1083,7 +1434,7 @@ function App() {
     } finally {
       setUserDetailLoading(false)
     }
-  }
+  }, [])
 
   async function loadContacts(showDoneNotice = true) {
     setContactsLoading(true)
@@ -1092,7 +1443,7 @@ function App() {
       const normalized = sortContacts(Array.isArray(data) ? data : [])
       setContacts(normalized)
       const list = await apiJson<Conversation[]>('/api/conversations')
-      setConversations(list)
+      applyConversationSnapshot(list)
       if (showDoneNotice) setNotice(`Đã tải ${normalized.length} liên hệ`)
       return normalized
     } catch (error) {
@@ -1116,7 +1467,7 @@ function App() {
         setContacts(sortContacts(Array.isArray(friendsResult.value) ? friendsResult.value : []))
       }
       const list = await apiJson<Conversation[]>('/api/conversations')
-      setConversations(list)
+      applyConversationSnapshot(list)
       const failed = results.filter((result) => result.status === 'rejected')
       setNotice(failed.length ? `Đồng bộ một phần: ${list.length} hội thoại` : `Đã đồng bộ ${list.length} hội thoại`)
     } catch (error) {
@@ -1135,7 +1486,12 @@ function App() {
     openConversation(target as Conversation)
   }
 
-  async function openConversation(conversation: Conversation, refresh = false) {
+  const updateMessageFilter = useCallback((value: string) => {
+    setVisibleMessageLimit(MESSAGE_RENDER_BATCH)
+    setMessageFilter(value)
+  }, [])
+
+  const openConversation = useCallback(async (conversation: Conversation, refresh = false) => {
     setSelected({ ...conversation, unread: 0, manualUnread: false })
     setConversations((current) => markConversationRead(current, conversation.id))
     if (conversation.type === 'group') {
@@ -1146,7 +1502,9 @@ function App() {
       setGroupDetail(null)
     }
     setShowAttachments(false)
-    setMessageFilter('')
+    updateMessageFilter('')
+    setHasOlderMessages(false)
+    setLoadingOlderMessages(false)
     setReplyTo(null)
     setPendingMentions([])
     setMentionQuery(null)
@@ -1159,16 +1517,141 @@ function App() {
     refreshedThreadsRef.current.add(conversation.id)
     reportClientEvent('conversation-open', { threadId: conversation.id, type: conversation.type, refresh: shouldRefresh, firstOpen })
     try {
-      const data = await loadConversationMessages(conversation, { refresh: shouldRefresh, markRead: true })
-      setMessages(Array.isArray(data) ? data : [])
+      const data = await loadConversationMessages(conversation, { refresh: shouldRefresh, markRead: true, limit: MESSAGE_PAGE_LIMIT })
+      setMessages(data.messages)
+      setHasOlderMessages(data.hasMore)
       await markThreadSeen(conversation.id, conversation.type)
     } catch (error) {
       setMessages([])
+      setHasOlderMessages(false)
       setNotice(error instanceof Error ? error.message : String(error))
     } finally {
       setOpening(false)
     }
-  }
+  }, [loadConversationMessages, loadGroupDetail, loadUserDetail, markThreadSeen, updateMessageFilter])
+  useEffect(() => {
+    openConversationRef.current = openConversation
+  }, [openConversation])
+
+  const openConversationFromMessage = useCallback((conversation: Conversation) => {
+    openConversationRef.current(conversation)
+  }, [])
+
+  const handleMessageUndone = useCallback((id: string) => {
+    setMessages((prev) => prev.filter((message) => message.id !== id))
+  }, [])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (hiddenMessageCount > 0) {
+      setVisibleMessageLimit((current) => current + MESSAGE_RENDER_STEP)
+      return
+    }
+    if (!selected || !hasOlderMessages || loadingOlderMessages || messageFilter) return
+    const beforeTs = messages[0]?.timestamp
+    if (!beforeTs) return
+
+    setLoadingOlderMessages(true)
+    try {
+      const data = await loadConversationMessages(selected, {
+        markRead: false,
+        limit: MESSAGE_PAGE_LIMIT,
+        beforeTs,
+      })
+      setMessages((current) => mergeMessages(current, data.messages))
+      setHasOlderMessages(data.hasMore)
+      setVisibleMessageLimit((current) => current + Math.max(data.messages.length, MESSAGE_RENDER_STEP))
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoadingOlderMessages(false)
+    }
+  }, [hasOlderMessages, hiddenMessageCount, loadConversationMessages, loadingOlderMessages, messageFilter, messages, selected])
+
+  const updateConversationSearch = useCallback((value: string) => {
+    setVisibleConversationLimit(CONVERSATION_RENDER_BATCH)
+    setFilter(value)
+  }, [])
+
+  const updateContactSearch = useCallback((value: string) => {
+    setVisibleContactLimit(CONTACT_RENDER_BATCH)
+    setContactFilter(value)
+  }, [])
+
+  const selectConversationFilter = useCallback((next: ConversationFilter) => {
+    setVisibleConversationLimit(CONVERSATION_RENDER_BATCH)
+    setConversationFilter(next)
+  }, [])
+
+  const selectCategory = useCallback((categoryId: string | null) => {
+    setVisibleConversationLimit(CONVERSATION_RENDER_BATCH)
+    setSelectedCategory(categoryId)
+  }, [])
+
+  const conversationListContent = useMemo(() => {
+    const selectedId = selected?.id
+    if (filteredConversations.length === 0) {
+      return (
+        <div className="emptyState">
+          <MessageCircle size={28} />
+          <p>Không có hội thoại</p>
+          <small>{filter ? 'Thử từ khóa khác' : selectedCategory ? 'Chưa có chat nào trong phân loại này' : 'Đồng bộ để tải danh sách'}</small>
+        </div>
+      )
+    }
+
+    if (selectedCategory) {
+      return (
+        <>
+          {workspaceConversations.groups.length > 0 && (
+            <div className="channelSection">
+              <div className="channelSectionHeader">
+                <span>Nhóm</span>
+                <small>{workspaceConversations.groups.length}</small>
+              </div>
+              {workspaceConversations.groups.map((conversation) => (
+                <ConversationRow
+                  key={`${conversation.type}-${conversation.id}`}
+                  conversation={conversation}
+                  active={selectedId === conversation.id}
+                  channel
+                  typing={Boolean(typingThreads[conversation.id])}
+                  onOpenConversation={openConversationFromMessage}
+                />
+              ))}
+            </div>
+          )}
+          {workspaceConversations.users.length > 0 && (
+            <div className="channelSection">
+              <div className="channelSectionHeader">
+                <span>Cá nhân</span>
+                <small>{workspaceConversations.users.length}</small>
+              </div>
+              {workspaceConversations.users.map((conversation) => (
+                <ConversationRow
+                  key={`${conversation.type}-${conversation.id}`}
+                  conversation={conversation}
+                  active={selectedId === conversation.id}
+                  channel
+                  typing={Boolean(typingThreads[conversation.id])}
+                  onOpenConversation={openConversationFromMessage}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )
+    }
+
+    return visibleConversations.map((conversation) => (
+      <ConversationRow
+        key={`${conversation.type}-${conversation.id}`}
+        conversation={conversation}
+        active={selectedId === conversation.id}
+        typing={Boolean(typingThreads[conversation.id])}
+        onOpenConversation={openConversationFromMessage}
+      />
+    ))
+  }, [filter, filteredConversations.length, openConversationFromMessage, selected?.id, selectedCategory, typingThreads, visibleConversations, workspaceConversations])
 
   async function conversationAction(action: 'mark_unread' | 'mark_read' | 'mute' | 'unmute' | 'pin' | 'unpin') {
     if (!selected) return
@@ -1179,7 +1662,7 @@ function App() {
         body: JSON.stringify({ action }),
       })
       setSelected(data.conversation)
-      setConversations((current) => current.map((item) => item.id === selected.id ? data.conversation : item))
+      setConversations((current) => replaceConversation(current, data.conversation))
       setNotice(action === 'mark_unread'
         ? 'Đã đánh dấu chưa đọc'
         : action === 'mark_read'
@@ -1459,7 +1942,7 @@ function App() {
   function deleteCategory(id: string) {
     const next = categories.filter((c) => c.id !== id)
     persistCategories(next)
-    if (selectedCategory === id) setSelectedCategory(null)
+    if (selectedCategory === id) selectCategory(null)
   }
 
   function toggleThreadInCategory(categoryId: string, threadId: string) {
@@ -1510,7 +1993,7 @@ function App() {
     }
     setNotice(mute ? `Đã tắt thông báo ${groupIds.length} nhóm` : `Đã bật thông báo ${groupIds.length} nhóm`)
     // Refresh conversations
-    apiJson<Conversation[]>('/api/conversations').then(setConversations).catch(() => undefined)
+    apiJson<Conversation[]>('/api/conversations').then(applyConversationSnapshot).catch(() => undefined)
   }
 
   return (
@@ -1527,38 +2010,44 @@ function App() {
       )}
       <section className="shell">
       {(!configured || showSettings) && (
-        <SettingsScreen
-          dismissible={configured}
-          onClose={() => setShowSettings(false)}
-          onSaved={() => { setShowSettings(false); setConfigured(true) }}
-        />
+        <Suspense fallback={<div className="loading">Đang tải cài đặt...</div>}>
+          <SettingsScreen
+            dismissible={configured}
+            onClose={() => setShowSettings(false)}
+            onSaved={() => { setShowSettings(false); setConfigured(true) }}
+          />
+        </Suspense>
       )}
       {showGlobalSearch && (
-        <GlobalSearch
-          onOpenThread={(threadId, type) => {
-            setShowGlobalSearch(false)
-            const existing = conversations.find((c) => c.id === threadId)
-            const target = existing ?? { id: threadId, type, name: threadId, unread: 0 }
-            openConversation(target as Conversation)
-          }}
-          onClose={() => setShowGlobalSearch(false)}
-        />
+        <Suspense fallback={null}>
+          <GlobalSearch
+            onOpenThread={(threadId, type) => {
+              setShowGlobalSearch(false)
+              const existing = conversations.find((c) => c.id === threadId)
+              const target = existing ?? { id: threadId, type, name: threadId, unread: 0 }
+              openConversation(target as Conversation)
+            }}
+            onClose={() => setShowGlobalSearch(false)}
+          />
+        </Suspense>
       )}
       {showFindUser && (
-        <FindUser
-          onOpenChat={(userId, name) => {
-            setShowFindUser(false)
-            const existing = conversations.find((c) => c.id === userId)
-            const target = existing ?? { id: userId, type: 'user' as ThreadKind, name, unread: 0 }
-            openConversation(target as Conversation)
-          }}
-          onClose={() => setShowFindUser(false)}
-        />
+        <Suspense fallback={null}>
+          <FindUser
+            onOpenChat={(userId, name) => {
+              setShowFindUser(false)
+              const existing = conversations.find((c) => c.id === userId)
+              const target = existing ?? { id: userId, type: 'user' as ThreadKind, name, unread: 0 }
+              openConversation(target as Conversation)
+            }}
+            onClose={() => setShowFindUser(false)}
+          />
+        </Suspense>
       )}
       {/* === ICON RAIL === */}
       <nav className="iconRail">
         <img className="appLogo" src="./szalo-icon.png" alt="Szalo" />
-        <button className={!showCategoryManager && !showNotifications && !showDiagnostics && !showContacts && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); setSelectedCategory(null); setConversationFilter('all') }} title="Tất cả chat">
+        <button className={!showCategoryManager && !showNotifications && !showDiagnostics && !showContacts && selectedCategory === null ? 'railButton active' : 'railButton'} onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); selectCategory(null); selectConversationFilter('all') }} title="Tất cả chat">
           <MessageCircle size={20} />
           {unreadCount > 0 && <span className="badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
         </button>
@@ -1567,8 +2056,8 @@ function App() {
           setShowCategoryManager(false)
           setShowNotifications(false)
           setShowDiagnostics(false)
-          setSelectedCategory(null)
-          setConversationFilter('all')
+          selectCategory(null)
+          selectConversationFilter('all')
           if (status.state === 'online' && contacts.length === 0 && !contactsLoading) void loadContacts(false)
         }} title="Danh bạ">
           <Users size={20} />
@@ -1577,12 +2066,12 @@ function App() {
         {/* Workspaces (Discord-style) */}
         {categories.length > 0 && <span className="railDivider" />}
         {categories.map((cat) => {
-          const workspaceUnread = conversations.filter((c) => cat.threadIds.includes(c.id)).reduce((sum, c) => sum + c.unread, 0)
+          const workspaceUnread = categoryUnreadById.get(cat.id) ?? 0
           return (
             <button
               key={cat.id}
               className={selectedCategory === cat.id && !showCategoryManager && !showNotifications && !showDiagnostics && !showContacts ? 'railWorkspace active' : 'railWorkspace'}
-              onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); setSelectedCategory(cat.id); setConversationFilter('all') }}
+              onClick={() => { setShowCategoryManager(false); setShowNotifications(false); setShowDiagnostics(false); setShowContacts(false); selectCategory(cat.id); selectConversationFilter('all') }}
               title={cat.name}
               style={{ '--workspace-color': cat.color } as React.CSSProperties}
             >
@@ -1651,8 +2140,8 @@ function App() {
             ) : selectedCategory && !showCategoryManager && !showNotifications && !showDiagnostics ? (
               <>
                 <h1 className="workspaceName">
-                  <span className="workspaceColor" style={{ background: categories.find((c) => c.id === selectedCategory)?.color }} />
-                  {categories.find((c) => c.id === selectedCategory)?.name}
+                  <span className="workspaceColor" style={{ background: selectedCategoryData?.color }} />
+                  {selectedCategoryData?.name}
                 </h1>
                 <p>{filteredConversations.length} hội thoại</p>
               </>
@@ -1758,7 +2247,7 @@ function App() {
             </header>
             <label className="search contactSearch">
               <Search size={16} />
-              <input value={contactFilter} onChange={(event) => setContactFilter(event.target.value)} placeholder="Tìm liên hệ, số điện thoại, ID" />
+              <input value={contactFilter} onChange={(event) => updateContactSearch(event.target.value)} placeholder="Tìm liên hệ, số điện thoại, ID" />
             </label>
             <div className="contactsSummary">
               <span>{filteredContacts.length} / {contacts.length} liên hệ</span>
@@ -1777,7 +2266,7 @@ function App() {
               </div>
             ) : (
               <div className="contactList">
-                {filteredContacts.map((contact) => {
+                {visibleContacts.map((contact) => {
                   const id = contactId(contact)
                   const name = contactName(contact)
                   const conversation = userConversationById.get(id)
@@ -1794,6 +2283,15 @@ function App() {
                     </button>
                   )
                 })}
+                {hiddenContactCount > 0 && (
+                  <button
+                    type="button"
+                    className="loadMoreRows"
+                    onClick={() => setVisibleContactLimit((current) => current + CONTACT_RENDER_STEP)}
+                  >
+                    Hiện thêm {Math.min(CONTACT_RENDER_STEP, hiddenContactCount)} liên hệ
+                  </button>
+                )}
               </div>
             )}
           </section>
@@ -1852,13 +2350,13 @@ function App() {
           <>
             <label className="search">
               <Search size={16} />
-              <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Tìm chat, group, ID" />
+              <input value={filter} onChange={(event) => updateConversationSearch(event.target.value)} placeholder="Tìm chat, group, ID" />
             </label>
             {!selectedCategory && (
               <div className="segments">
-                <button className={conversationFilter === 'all' ? 'active' : ''} onClick={() => setConversationFilter('all')}>Tất cả {conversations.length}</button>
-                <button className={conversationFilter === 'user' ? 'active' : ''} onClick={() => setConversationFilter('user')}>Cá nhân {userCount}</button>
-                <button className={conversationFilter === 'group' ? 'active' : ''} onClick={() => setConversationFilter('group')}>Nhóm {groupCount}</button>
+                <button className={conversationFilter === 'all' ? 'active' : ''} onClick={() => selectConversationFilter('all')}>Tất cả {conversations.length}</button>
+                <button className={conversationFilter === 'user' ? 'active' : ''} onClick={() => selectConversationFilter('user')}>Cá nhân {userCount}</button>
+                <button className={conversationFilter === 'group' ? 'active' : ''} onClick={() => selectConversationFilter('group')}>Nhóm {groupCount}</button>
               </div>
             )}
             {selectedCategory && (
@@ -1868,89 +2366,15 @@ function App() {
               </button>
             )}
             <nav className="conversationList">
-              {filteredConversations.length === 0 ? (
-                <div className="emptyState">
-                  <MessageCircle size={28} />
-                  <p>Không có hội thoại</p>
-                  <small>{filter ? 'Thử từ khóa khác' : selectedCategory ? 'Chưa có chat nào trong phân loại này' : 'Đồng bộ để tải danh sách'}</small>
-                </div>
-              ) : selectedCategory ? (
-                // Discord-style: group by type within workspace
-                <>
-                  {filteredConversations.filter((c) => c.type === 'group').length > 0 && (
-                    <div className="channelSection">
-                      <div className="channelSectionHeader">
-                        <span>Nhóm</span>
-                        <small>{filteredConversations.filter((c) => c.type === 'group').length}</small>
-                      </div>
-                      {filteredConversations.filter((c) => c.type === 'group').map((conversation) => (
-                        <button
-                          key={`${conversation.type}-${conversation.id}`}
-                          className={selected?.id === conversation.id ? 'conversation channel active' : 'conversation channel'}
-                          onClick={() => openConversation(conversation)}
-                        >
-                          <span className="channelHash">#</span>
-                          <span className="conversationText">
-                            <strong>{conversation.name}</strong>
-                            <small>
-                              {conversation.pinned && <Pin size={11} />}
-                              {conversation.muted && <BellOff size={11} />}
-                              {typingThreads[conversation.id] ? <em>Đang gõ...</em> : (conversation.lastMessage || ' ')}
-                            </small>
-                          </span>
-                          {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {filteredConversations.filter((c) => c.type === 'user').length > 0 && (
-                    <div className="channelSection">
-                      <div className="channelSectionHeader">
-                        <span>Cá nhân</span>
-                        <small>{filteredConversations.filter((c) => c.type === 'user').length}</small>
-                      </div>
-                      {filteredConversations.filter((c) => c.type === 'user').map((conversation) => (
-                        <button
-                          key={`${conversation.type}-${conversation.id}`}
-                          className={selected?.id === conversation.id ? 'conversation channel active' : 'conversation channel'}
-                          onClick={() => openConversation(conversation)}
-                        >
-                          <span className="channelHash">@</span>
-                          <span className="conversationText">
-                            <strong>{conversation.name}</strong>
-                            <small>
-                              {conversation.pinned && <Pin size={11} />}
-                              {conversation.muted && <BellOff size={11} />}
-                              {typingThreads[conversation.id] ? <em>Đang gõ...</em> : (conversation.lastMessage || ' ')}
-                            </small>
-                          </span>
-                          {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                filteredConversations.map((conversation) => (
-                  <button
-                    key={`${conversation.type}-${conversation.id}`}
-                    className={selected?.id === conversation.id ? 'conversation active' : 'conversation'}
-                    onClick={() => openConversation(conversation)}
-                  >
-                    <span className="avatar" style={!conversation.avatar ? { background: avatarGradient(conversation.id) } : undefined}>
-                      {conversation.avatar ? <img src={conversation.avatar} alt="" /> : conversation.type === 'group' ? <Users size={16} /> : conversation.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="conversationText">
-                      <strong>{conversation.name}</strong>
-                      <small>
-                        {conversation.pinned && <Pin size={11} />}
-                        {conversation.muted && <BellOff size={11} />}
-                        {typingThreads[conversation.id] ? <em>Đang gõ...</em> : (conversation.lastMessage || conversation.id)}
-                      </small>
-                    </span>
-                    {conversation.unread > 0 && <span className="badge">{conversation.unread}</span>}
-                  </button>
-                ))
+              {conversationListContent}
+              {hiddenConversationCount > 0 && (
+                <button
+                  type="button"
+                  className="loadMoreRows"
+                  onClick={() => setVisibleConversationLimit((current) => current + CONVERSATION_RENDER_STEP)}
+                >
+                  Hiện thêm {Math.min(CONVERSATION_RENDER_STEP, hiddenConversationCount)} hội thoại
+                </button>
               )}
             </nav>
           </>
@@ -1973,13 +2397,13 @@ function App() {
               <div className="chatTools">
                 <label className="messageSearch">
                   <Search size={14} />
-                  <input value={messageFilter} onChange={(event) => setMessageFilter(event.target.value)} placeholder="Tìm tin nhắn" />
+                  <input value={messageFilter} onChange={(event) => updateMessageFilter(event.target.value)} placeholder="Tìm tin nhắn" />
                 </label>
                 <div className="iconGroup">
                   <button className={showAttachments ? 'iconButton active' : 'iconButton'} onClick={() => {
                     const next = !showAttachments
                     setShowAttachments(next)
-                    reportClientEvent('attachments-panel', { open: next, count: attachmentItems.length })
+                    reportClientEvent('attachments-panel', { open: next, count: attachmentCount })
                   }} title="Tệp trong chat">
                     <FileUp size={16} />
                   </button>
@@ -2165,78 +2589,31 @@ function App() {
               {opening && <div className="loading">Đang tải tin nhắn...</div>}
               {selected && typingThreads[selected.id] && <div className="loading">Đang gõ...</div>}
               {messageFilter && filteredMessages.length === 0 && <div className="loading">Không có kết quả</div>}
-              {filteredMessages.map((message) => (
-                <article key={message.id} className={message.isSelf ? 'message self' : 'message'}>
-                  <span
-                    className={!message.isSelf && selected?.type === 'group' ? 'sender clickable' : 'sender'}
-                    onClick={() => {
-                      if (!message.isSelf && selected?.type === 'group' && message.senderId) {
-                        // Click sender name in group → open 1-1 chat with that person
-                        const existing = conversations.find((c) => c.id === message.senderId)
-                        const target = existing ?? {
-                          id: message.senderId!,
-                          type: 'user' as ThreadKind,
-                          name: message.senderName || message.senderId!,
-                          unread: 0,
-                        }
-                        openConversation(target as Conversation)
-                      }
-                    }}
-                  >
-                    {message.isSelf ? 'Bạn' : message.senderName || message.threadId}
-                  </span>
-                  {message.text && <p>{message.text}</p>}
-                  {message.attachments.map((attachment, index) => {
-                    const url = attachmentUrl(attachment.href, attachment.title)
-                    const preview = attachment.thumb ? attachmentUrl(attachment.thumb, attachment.title) : (isImageAttachment(attachment) ? url : undefined)
-                    const isImage = isImageAttachment(attachment)
-                    // Original Zalo URL — used when opening externally so the
-                    // browser fetches the file directly from Zalo's CDN
-                    // instead of going through our localhost proxy URL.
-                    const externalUrl = attachment.href && attachment.href.startsWith('http') ? attachment.href : url
-                    if (isImage && preview) {
-                      return (
-                        <img key={`${attachment.href}-${index}`} className="msgImage" src={preview} alt={attachment.title || ''} onContextMenu={(e) => {
-                          e.preventDefault()
-                          const original = attachment.href || attachment.thumb
-                          if (original) navigator.clipboard.writeText(original).then(() => setNotice('Đã copy link ảnh')).catch(() => setNotice('Không copy được link'))
-                        }} onClick={(e) => {
-                          e.preventDefault()
-                          if (externalUrl) window.open(externalUrl, '_blank', 'noopener,noreferrer')
-                        }} />
-                      )
-                    }
-                    return externalUrl ? (
-                      <a key={`${attachment.href}-${index}`} href={externalUrl} target="_blank" rel="noreferrer" className="fileAttachment">
-                        <FileUp size={15} /> {attachment.title || 'Tệp đính kèm'} {attachment.size ? `(${attachment.size} bytes)` : ''}
-                      </a>
-                    ) : (
-                      <span className="fileAttachment" key={`${attachment.title}-${index}`}>
-                        <FileUp size={15} /> {attachment.title || 'Tệp đính kèm'} {attachment.size ? `(${attachment.size} bytes)` : ''}
-                      </span>
-                    )
-                  })}
-                  {message.reactions && Object.keys(message.reactions).length > 0 && (
-                    <span className="msgReactions">
-                      {Object.entries(message.reactions).map(([icon, users]) => (
-                        <span key={icon} className="reactionBubble" title={users.join(', ')}>
-                          {icon} <small>{users.length}</small>
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                  <span className="messageMeta">
-                    <time>{new Date(message.timestamp).toLocaleString('vi-VN')}</time>
-                    {message.isSelf && deliveryLabel(message.deliveryStatus) && (
-                      <span className="receipt"><CheckCheck size={13} /> {deliveryLabel(message.deliveryStatus)}</span>
-                    )}
-                  </span>
-                  <MessageActions
-                    message={message}
-                    onReply={(msg) => setReplyTo(msg)}
-                    onUndone={(id) => setMessages((prev) => prev.filter((m) => m.id !== id))}
-                  />
-                </article>
+              {(hiddenMessageCount > 0 || (hasOlderMessages && !messageFilter)) && (
+                <button
+                  type="button"
+                  className="loadOlderMessages"
+                  onClick={loadOlderMessages}
+                  disabled={loadingOlderMessages}
+                >
+                  {loadingOlderMessages
+                    ? 'Đang tải tin cũ...'
+                    : hiddenMessageCount > 0
+                      ? `Hiện thêm ${Math.min(MESSAGE_RENDER_STEP, hiddenMessageCount)} tin cũ`
+                      : `Tải thêm ${MESSAGE_PAGE_LIMIT} tin cũ`}
+                </button>
+              )}
+              {visibleMessages.map((message) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  selectedType={selected?.type}
+                  userConversationById={userConversationById}
+                  onOpenConversation={openConversationFromMessage}
+                  onReply={setReplyTo}
+                  onUndone={handleMessageUndone}
+                  onNotice={setNotice}
+                />
               ))}
               <div ref={endRef} />
             </div>
@@ -2261,27 +2638,33 @@ function App() {
               onDrop={handleComposerDrop}
             >
               {showQuickReply && (
-                <QuickReplyPicker
-                  filter={text}
-                  onSelect={(reply) => { setText(reply); setShowQuickReply(false) }}
-                  onClose={() => setShowQuickReply(false)}
-                />
+                <Suspense fallback={null}>
+                  <QuickReplyPicker
+                    filter={text}
+                    onSelect={(reply) => { setText(reply); setShowQuickReply(false) }}
+                    onClose={() => setShowQuickReply(false)}
+                  />
+                </Suspense>
               )}
               {mentionQuery !== null && selected?.type === 'group' && (
-                <MentionPicker
-                  groupId={selected.id}
-                  query={mentionQuery}
-                  onSelect={insertMention}
-                  onClose={() => setMentionQuery(null)}
-                />
+                <Suspense fallback={null}>
+                  <MentionPicker
+                    groupId={selected.id}
+                    query={mentionQuery}
+                    onSelect={insertMention}
+                    onClose={() => setMentionQuery(null)}
+                  />
+                </Suspense>
               )}
               {showStickers && selected && (
-                <StickerPicker
-                  threadId={selected.id}
-                  threadType={selected.type}
-                  onSent={() => setShowStickers(false)}
-                  onClose={() => setShowStickers(false)}
-                />
+                <Suspense fallback={null}>
+                  <StickerPicker
+                    threadId={selected.id}
+                    threadType={selected.type}
+                    onSent={() => setShowStickers(false)}
+                    onClose={() => setShowStickers(false)}
+                  />
+                </Suspense>
               )}
               <div className="dropHint">Kéo file vào đây hoặc paste ảnh/file từ clipboard. Tối đa {MAX_FILE_COUNT} file, {formatBytes(MAX_FILE_BYTES)}/file.</div>
               {files.length > 0 && <div className="fileQueue">{files.map((file, index) => (
@@ -2292,12 +2675,14 @@ function App() {
                 </span>
               ))}</div>}
               {recordingVoice && selected && (
-                <VoiceRecorder
-                  threadId={selected.id}
-                  threadType={selected.type}
-                  onSent={() => { setRecordingVoice(false); setNotice('Đã gửi voice') }}
-                  onCancel={() => setRecordingVoice(false)}
-                />
+                <Suspense fallback={null}>
+                  <VoiceRecorder
+                    threadId={selected.id}
+                    threadType={selected.type}
+                    onSent={() => { setRecordingVoice(false); setNotice('Đã gửi voice') }}
+                    onCancel={() => setRecordingVoice(false)}
+                  />
+                </Suspense>
               )}
               <form className="composeRow" onSubmit={(event) => {
                 event.preventDefault()
@@ -2388,40 +2773,48 @@ function App() {
 
       {/* Channel picker modal */}
       {showAllMembers && selected?.type === 'group' && (
-        <GroupMembersModal
-          groupId={selected.id}
-          groupName={selected.name}
-          onOpenChat={(userId, displayName, avatar) => {
-            setShowAllMembers(false)
-            const existing = conversations.find((c) => c.id === userId)
-            const target = existing ?? { id: userId, type: 'user' as ThreadKind, name: displayName, avatar, unread: 0 }
-            openConversation(target as Conversation)
-          }}
-          onClose={() => setShowAllMembers(false)}
-        />
+        <Suspense fallback={null}>
+          <GroupMembersModal
+            groupId={selected.id}
+            groupName={selected.name}
+            onOpenChat={(userId, displayName, avatar) => {
+              setShowAllMembers(false)
+              const existing = conversations.find((c) => c.id === userId)
+              const target = existing ?? { id: userId, type: 'user' as ThreadKind, name: displayName, avatar, unread: 0 }
+              openConversation(target as Conversation)
+            }}
+            onClose={() => setShowAllMembers(false)}
+          />
+        </Suspense>
       )}
       {showReminders && selected && (
-        <RemindersPanel
-          threadId={selected.id}
-          threadType={selected.type}
-          onClose={() => setShowReminders(false)}
-        />
+        <Suspense fallback={null}>
+          <RemindersPanel
+            threadId={selected.id}
+            threadType={selected.type}
+            onClose={() => setShowReminders(false)}
+          />
+        </Suspense>
       )}
       {showAutoReply && (
-        <AutoReplyPanel onClose={() => setShowAutoReply(false)} />
+        <Suspense fallback={null}>
+          <AutoReplyPanel onClose={() => setShowAutoReply(false)} />
+        </Suspense>
       )}
       {showBankCard && selected && (
-        <BankCardForm
-          threadId={selected.id}
-          threadType={selected.type}
-          onSent={() => { setShowBankCard(false); setNotice('Đã gửi STK') }}
-          onClose={() => setShowBankCard(false)}
-        />
+        <Suspense fallback={null}>
+          <BankCardForm
+            threadId={selected.id}
+            threadType={selected.type}
+            onSent={() => { setShowBankCard(false); setNotice('Đã gửi STK') }}
+            onClose={() => setShowBankCard(false)}
+          />
+        </Suspense>
       )}
       {showChannelPicker && selectedCategory && (() => {
         const currentCategory = categories.find((c) => c.id === selectedCategory)
         const existingIds = new Set(currentCategory?.threadIds ?? [])
-        const query = pickerSearch.trim().toLowerCase()
+        const query = deferredPickerSearch.trim().toLowerCase()
         const candidates = conversations.filter((c) => {
           if (existingIds.has(c.id)) return false
           if (!query) return true
