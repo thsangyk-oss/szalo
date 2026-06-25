@@ -65,6 +65,8 @@ const LISTENER_STALE_MS = 15 * 60 * 1000;
 const LISTENER_MAX_AGE_MS = 60 * 60 * 1000;
 const LISTENER_RESTART_DELAY_MS = 10 * 1000;
 const LISTENER_INTERNAL_RETRY_GRACE_MS = 2 * 60 * 1000;
+const PERSIST_DEBOUNCE_MS = 1500;
+const PERSIST_MAX_WAIT_MS = 10000;
 const ROOT = process.cwd();
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -235,6 +237,9 @@ const userHydrationInFlight = new Map<string, Promise<{ profile?: User; conversa
 // dName is often empty.
 const userNameCache = new Map<string, string>();
 let persistTimer: NodeJS.Timeout | null = null;
+let persistDirtyConversations = false;
+let persistDirtyMessages = false;
+let persistFirstScheduledAt = 0;
 let listenerStartedAt = 0;
 let lastListenerActivityAt = 0;
 let lastListenerConnectedAt = 0;
@@ -668,6 +673,20 @@ function conversationIdentityChanged(before: Conversation | undefined, after: Co
   return before?.name !== after?.name || before?.avatar !== after?.avatar || before?.type !== after?.type;
 }
 
+function conversationStateChanged(before: Conversation | undefined, after: Conversation) {
+  return !before
+    || before.id !== after.id
+    || before.type !== after.type
+    || before.name !== after.name
+    || before.avatar !== after.avatar
+    || before.lastMessage !== after.lastMessage
+    || before.lastTimestamp !== after.lastTimestamp
+    || before.unread !== after.unread
+    || before.manualUnread !== after.manualUnread
+    || before.muted !== after.muted
+    || before.pinned !== after.pinned;
+}
+
 function profileFromUserInfo(info: { changed_profiles?: Record<string, User> }, userId: string) {
   const profiles = info.changed_profiles ?? {};
   return profiles[userId]
@@ -700,7 +719,7 @@ async function hydrateUserConversation(userId: string, emit = true) {
     }, { preferIncomingName: true });
 
     if (conversationIdentityChanged(before, conversation)) {
-      schedulePersist();
+      schedulePersist("conversations");
       if (emit) emitConversation(conversation);
     }
     return { profile, conversation };
@@ -726,20 +745,37 @@ function messageStats() {
   };
 }
 
-function schedulePersist() {
+function schedulePersist(target: "all" | "conversations" | "messages" = "all") {
+  if (target === "all" || target === "conversations") persistDirtyConversations = true;
+  if (target === "all" || target === "messages") persistDirtyMessages = true;
+  if (!persistDirtyConversations && !persistDirtyMessages) return;
+
+  const now = Date.now();
+  if (!persistFirstScheduledAt) persistFirstScheduledAt = now;
   if (persistTimer) clearTimeout(persistTimer);
+  const elapsedMs = now - persistFirstScheduledAt;
+  const delayMs = elapsedMs >= PERSIST_MAX_WAIT_MS ? 0 : Math.min(PERSIST_DEBOUNCE_MS, PERSIST_MAX_WAIT_MS - elapsedMs);
   persistTimer = setTimeout(() => {
-    void persistLocalState();
-  }, 500);
+    void persistLocalState().catch((error) => {
+      console.warn(`Could not persist local cache: ${errorMessage(error)}`);
+    });
+  }, delayMs);
 }
 
 async function persistLocalState() {
   persistTimer = null;
+  persistFirstScheduledAt = 0;
+  const writeConversations = persistDirtyConversations;
+  const writeMessages = persistDirtyMessages;
+  persistDirtyConversations = false;
+  persistDirtyMessages = false;
+  if (!writeConversations && !writeMessages) return;
+
   await mkdir(DATA_DIR, { recursive: true });
-  await Promise.all([
-    writeFile(CONVERSATIONS_CACHE_FILE, JSON.stringify(sortedConversations()), "utf8"),
-    writeFile(MESSAGES_CACHE_FILE, JSON.stringify(Object.fromEntries(messages)), "utf8"),
-  ]);
+  const writes: Array<Promise<void>> = [];
+  if (writeConversations) writes.push(writeFile(CONVERSATIONS_CACHE_FILE, JSON.stringify(sortedConversations()), "utf8"));
+  if (writeMessages) writes.push(writeFile(MESSAGES_CACHE_FILE, JSON.stringify(persistedMessageCache()), "utf8"));
+  await Promise.all(writes);
 }
 
 async function loadLocalState() {
@@ -898,7 +934,7 @@ function markDeliveryStatus(items: Array<DeliveredMessage | SeenMessage>, status
       io.emit("message_status", update);
     }
   }
-  if (updates.length > 0) schedulePersist();
+  if (updates.length > 0) schedulePersist("messages");
   return updates;
 }
 
@@ -929,19 +965,30 @@ async function refreshConversationControls() {
     }
   }
 
+  let changed = false;
   for (const conversation of conversations.values()) {
-    conversation.muted = muted.has(conversation.id);
-    conversation.pinned = pinned.has(conversation.id);
+    const nextMuted = muted.has(conversation.id);
+    const nextPinned = pinned.has(conversation.id);
+    if (conversation.muted !== nextMuted) {
+      conversation.muted = nextMuted;
+      changed = true;
+    }
+    if (conversation.pinned !== nextPinned) {
+      conversation.pinned = nextPinned;
+      changed = true;
+    }
     if (unreadMarked.has(conversation.id) && conversation.unread === 0) {
       conversation.unread = 1;
       conversation.manualUnread = true;
+      changed = true;
     } else if (!unreadMarked.has(conversation.id) && conversation.manualUnread) {
       conversation.unread = 0;
       conversation.manualUnread = false;
+      changed = true;
     }
   }
-  schedulePersist();
-  return { muted: muted.size, pinned: pinned.size, unreadMarked: unreadMarked.size };
+  if (changed) schedulePersist("conversations");
+  return { muted: muted.size, pinned: pinned.size, unreadMarked: unreadMarked.size, changed };
 }
 
 function normalizeIncoming(message: Message): ChatMessage {
@@ -998,6 +1045,27 @@ function publicMessages(list: ChatMessage[]) {
   return list.map(publicMessage);
 }
 
+function persistedMessageRaw(raw: unknown) {
+  const data = (raw as { data?: Record<string, unknown> } | null | undefined)?.data;
+  if (!data || typeof data !== "object") return undefined;
+
+  const lightData: Record<string, unknown> = {};
+  for (const key of ["msgId", "realMsgId", "cliMsgId", "uidFrom", "idTo", "msgType", "st", "at", "cmd", "ts", "content", "propertyExt"]) {
+    if (data[key] !== undefined) lightData[key] = data[key];
+  }
+  return Object.keys(lightData).length > 0 ? { data: lightData } : undefined;
+}
+
+function persistedMessage(message: ChatMessage): ChatMessage {
+  const { raw: _raw, ...rest } = message;
+  const raw = persistedMessageRaw(_raw);
+  return raw ? { ...rest, raw } : rest;
+}
+
+function persistedMessageCache() {
+  return Object.fromEntries(Array.from(messages, ([threadId, list]) => [threadId, list.map(persistedMessage)]));
+}
+
 function queryNumber(value: unknown) {
   const raw = Array.isArray(value) ? value[0] : value;
   if (typeof raw !== "string" && typeof raw !== "number") return null;
@@ -1033,7 +1101,7 @@ async function hydrateUserName(userId: string) {
         }
       }
     }
-    schedulePersist();
+    schedulePersist("messages");
   } catch {
     // Ignore — we'll try again next time
   }
@@ -1049,7 +1117,7 @@ function applyUndo(undo: { threadId: string; msgId?: string | number; cliMsgId?:
   const filtered = list.filter((msg) => msg.id !== targetId);
   if (filtered.length < before) {
     messages.set(threadId, filtered);
-    schedulePersist();
+    schedulePersist("messages");
   }
 }
 
@@ -1075,14 +1143,16 @@ function upsertMessage(message: ChatMessage) {
     unread: hasNewIncomingMessage ? (existing?.manualUnread ? 1 : (existing?.unread ?? 0) + 1) : existing?.unread ?? 0,
     manualUnread: hasNewIncomingMessage ? false : existing?.manualUnread,
   });
+  const conversationChanged = conversationStateChanged(existing, conversation);
   if (message.type === "user" && isNew) {
     const conversation = conversations.get(message.threadId);
     if (conversation && (!conversation.avatar || isPlaceholderConversationName(message.threadId, conversation.name))) {
       void hydrateUserConversation(message.threadId).catch((error) => recordListenerEvent("user_hydrate_error", { threadId: message.threadId, error: errorMessage(error) }));
     }
   }
-  schedulePersist();
-  return { isNew, isLatest, countedUnread: hasNewIncomingMessage, conversation };
+  if (isNew) schedulePersist("messages");
+  if (conversationChanged) schedulePersist("conversations");
+  return { isNew, isLatest, countedUnread: hasNewIncomingMessage, conversation, conversationChanged };
 }
 
 async function saveSession(session: SavedSession) {
@@ -1229,7 +1299,7 @@ async function afterLogin(api: API) {
           if (!msg.reactions[icon]) msg.reactions[icon] = [];
           if (!msg.reactions[icon].includes(userId)) {
             msg.reactions[icon].push(userId);
-            schedulePersist();
+            schedulePersist("messages");
           }
         }
       }
@@ -1693,7 +1763,7 @@ app.get("/api/friends", async (_req, res) => {
       raw: friend,
     }, { preferIncomingName: true });
   }
-  schedulePersist();
+  schedulePersist("conversations");
   emitConversations();
   if (warning) res.setHeader("X-Zalo-Warning", warning);
   res.json(unique);
@@ -1723,7 +1793,7 @@ app.get("/api/groups", async (_req, res) => {
       });
     }
   }
-  schedulePersist();
+  schedulePersist("conversations");
   emitConversations();
   res.json(publicConversations(sortedConversations().filter((item) => item.type === "group")));
 });
@@ -1746,7 +1816,7 @@ app.get("/api/groups/:groupId", async (req, res) => {
     raw: group,
   }, { preferIncomingName: true });
   if (conversationIdentityChanged(beforeGroupConversation, groupConversation)) {
-    schedulePersist();
+    schedulePersist("conversations");
     emitConversation(groupConversation);
   }
 
@@ -1937,7 +2007,7 @@ app.post("/api/conversations/:type/:threadId/action", async (req, res) => {
   }
 
   conversations.set(threadId, conversation);
-  schedulePersist();
+  schedulePersist("conversations");
   emitConversation(conversation);
   res.json({ ok: true, conversation: publicConversation(conversation), action });
 });
@@ -1979,8 +2049,10 @@ app.get("/api/messages/:type/:threadId", async (req, res) => {
     const hadUnread = conversation.unread !== 0;
     conversation.unread = 0;
     conversation.manualUnread = false;
-    schedulePersist();
-    if (hadUnread) emitConversation(conversation);
+    if (hadUnread) {
+      schedulePersist("conversations");
+      emitConversation(conversation);
+    }
   }
   // zca-js can fetch full history only for groups. For 1-1 chats the cache is
   // realtime-only, so tell the client to show a "from when server started"
@@ -2445,7 +2517,7 @@ app.post("/api/events/seen", async (req, res) => {
   if (conversation && conversation.unread !== 0) {
     conversation.unread = 0;
     conversation.manualUnread = false;
-    schedulePersist();
+    schedulePersist("conversations");
     emitConversation(conversation);
   }
   res.json({ ok: true, count: params.length });
