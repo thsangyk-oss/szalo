@@ -130,7 +130,7 @@ function applyConversationToThreads(threads: BubbleThread[], conversation: Conve
 function unreadByConversation(conversations: Conversation[]) {
   const map: Record<string, number> = {}
   for (const item of conversations) {
-    map[item.id] = item.manualUnread ? 0 : item.unread
+    map[item.id] = conversationUnread(item)
   }
   return map
 }
@@ -146,13 +146,13 @@ function sameUnreadMap(a: Record<string, number>, b: Record<string, number>) {
 }
 
 function setUnreadForConversation(current: Record<string, number>, conversation: Conversation, activeThreadId?: string) {
-  const unread = conversation.id === activeThreadId ? 0 : conversation.manualUnread ? 0 : conversation.unread
+  const unread = conversation.id === activeThreadId ? 0 : conversationUnread(conversation)
   if ((current[conversation.id] ?? 0) === unread) return current
   return { ...current, [conversation.id]: unread }
 }
 
-function totalUnreadFromMap(unreadMap: Record<string, number>) {
-  return Object.values(unreadMap).reduce((sum, unread) => sum + Math.max(0, unread), 0)
+function conversationUnread(conversation: Conversation) {
+  return conversation.manualUnread ? 0 : Math.max(0, conversation.unread)
 }
 
 function bubbleMessageWindowSize(unread: number) {
@@ -163,13 +163,55 @@ function bubbleMessageWindowSize(unread: number) {
 export function BubbleDock() {
   const [threads, setThreads] = useState<BubbleThread[]>((electron?.getBubbleThreads() ?? []).map(normalizeThread))
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
+  const [baselineUnreadMap, setBaselineUnreadMap] = useState<Record<string, number>>({})
   const [socket, setSocket] = useState<Socket | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const threadsRef = useRef(threads)
+  const unreadMapRef = useRef(unreadMap)
   const dragRef = useRef<{ startX: number; startY: number; dragging: boolean; moved: boolean }>({
     startX: 0, startY: 0, dragging: false, moved: false
   })
 
-  const totalUnread = totalUnreadFromMap(unreadMap)
+  const totalUnread = threads.reduce((sum, thread) => {
+    const unread = Math.max(0, unreadMap[thread.threadId] ?? 0)
+    const baseline = baselineUnreadMap[thread.threadId] ?? unread
+    return sum + Math.max(0, unread - baseline)
+  }, 0)
+
+  function syncUnreadBaselines(nextUnread: Record<string, number>, nextThreads = threadsRef.current) {
+    setBaselineUnreadMap((current) => {
+      let changed = false
+      const next: Record<string, number> = {}
+      for (const thread of nextThreads) {
+        const threadId = thread.threadId
+        const hasUnread = Object.prototype.hasOwnProperty.call(nextUnread, threadId)
+        const currentBaseline = current[threadId]
+        if (!hasUnread) {
+          if (currentBaseline !== undefined) next[threadId] = currentBaseline
+          continue
+        }
+        const unread = Math.max(0, nextUnread[threadId] ?? 0)
+        if (currentBaseline === undefined || unread < currentBaseline) {
+          next[threadId] = unread
+          changed = true
+        } else {
+          next[threadId] = currentBaseline
+        }
+      }
+      const currentKeys = Object.keys(current)
+      const nextKeys = Object.keys(next)
+      if (currentKeys.length !== nextKeys.length) changed = true
+      else if (!changed) {
+        for (const key of nextKeys) {
+          if (current[key] !== next[key]) {
+            changed = true
+            break
+          }
+        }
+      }
+      return changed ? next : current
+    })
+  }
 
   useEffect(() => {
     document.documentElement.classList.add('bubbleDockPage')
@@ -199,9 +241,22 @@ export function BubbleDock() {
 
   useEffect(() => {
     if (electron) {
-      return electron.onBubbleThreads((data) => setThreads(data.map(normalizeThread)))
+      return electron.onBubbleThreads((data) => {
+        const nextThreads = data.map(normalizeThread)
+        threadsRef.current = nextThreads
+        syncUnreadBaselines(unreadMapRef.current, nextThreads)
+        setThreads(nextThreads)
+      })
     }
   }, [])
+
+  useEffect(() => {
+    threadsRef.current = threads
+  }, [threads])
+
+  useEffect(() => {
+    unreadMapRef.current = unreadMap
+  }, [unreadMap])
 
   useEffect(() => subscribeSocket(setSocket), [])
 
@@ -212,11 +267,16 @@ export function BubbleDock() {
       // the server re-sends the full list) so the badge doesn't flicker off.
       if (items.length === 0) return
       const nextUnread = unreadByConversation(items)
+      unreadMapRef.current = nextUnread
+      syncUnreadBaselines(nextUnread)
       setUnreadMap((current) => sameUnreadMap(current, nextUnread) ? current : nextUnread)
       setThreads((current) => syncThreadsWithConversations(current, items))
     }
     const handleConversation = (item: Conversation) => {
-      setUnreadMap((current) => setUnreadForConversation(current, item))
+      const nextUnread = setUnreadForConversation(unreadMapRef.current, item)
+      unreadMapRef.current = nextUnread
+      syncUnreadBaselines(nextUnread)
+      setUnreadMap((current) => sameUnreadMap(current, nextUnread) ? current : nextUnread)
       setThreads((current) => applyConversationToThreads(current, item))
     }
     apiJson<Conversation[]>('/api/conversations').then(handleConversations).catch(() => undefined)
