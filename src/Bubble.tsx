@@ -34,6 +34,12 @@ type ChatMessage = {
   attachments: Array<{ title?: string; href?: string; thumb?: string; type?: string }>
 }
 
+type MessagePage = {
+  messages: ChatMessage[]
+  hasMore: boolean
+  total: number
+}
+
 type Conversation = {
   id: string
   type: string
@@ -101,7 +107,24 @@ function applyConversationToThread(thread: BubbleThread, conversation?: Conversa
 
 function syncThreadsWithConversations(threads: BubbleThread[], conversations: Conversation[]) {
   const byId = new Map(conversations.map((item) => [item.id, item]))
-  return threads.map((thread) => applyConversationToThread(thread, byId.get(thread.threadId)))
+  let changed = false
+  const next = threads.map((thread) => {
+    const updated = applyConversationToThread(thread, byId.get(thread.threadId))
+    if (updated !== thread) changed = true
+    return updated
+  })
+  return changed ? next : threads
+}
+
+function applyConversationToThreads(threads: BubbleThread[], conversation: Conversation) {
+  let changed = false
+  const next = threads.map((thread) => {
+    if (thread.threadId !== conversation.id) return thread
+    const updated = applyConversationToThread(thread, conversation)
+    if (updated !== thread) changed = true
+    return updated
+  })
+  return changed ? next : threads
 }
 
 function unreadByConversation(conversations: Conversation[]) {
@@ -110,6 +133,22 @@ function unreadByConversation(conversations: Conversation[]) {
     map[item.id] = item.manualUnread ? 0 : item.unread
   }
   return map
+}
+
+function sameUnreadMap(a: Record<string, number>, b: Record<string, number>) {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false
+  }
+  return true
+}
+
+function setUnreadForConversation(current: Record<string, number>, conversation: Conversation, activeThreadId?: string) {
+  const unread = conversation.id === activeThreadId ? 0 : conversation.manualUnread ? 0 : conversation.unread
+  if ((current[conversation.id] ?? 0) === unread) return current
+  return { ...current, [conversation.id]: unread }
 }
 
 function bubbleMessageWindowSize(unread: number) {
@@ -168,12 +207,21 @@ export function BubbleDock() {
       // Ignore empty snapshots (they arrive briefly on socket reconnect before
       // the server re-sends the full list) so the badge doesn't flicker off.
       if (items.length === 0) return
-      setUnreadMap(unreadByConversation(items))
+      const nextUnread = unreadByConversation(items)
+      setUnreadMap((current) => sameUnreadMap(current, nextUnread) ? current : nextUnread)
       setThreads((current) => syncThreadsWithConversations(current, items))
+    }
+    const handleConversation = (item: Conversation) => {
+      setUnreadMap((current) => setUnreadForConversation(current, item))
+      setThreads((current) => applyConversationToThreads(current, item))
     }
     apiJson<Conversation[]>('/api/conversations').then(handleConversations).catch(() => undefined)
     socket.on('conversations', handleConversations)
-    return () => { socket.off('conversations', handleConversations) }
+    socket.on('conversation', handleConversation)
+    return () => {
+      socket.off('conversations', handleConversations)
+      socket.off('conversation', handleConversation)
+    }
   }, [socket])
 
   function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
@@ -268,6 +316,7 @@ export function BubblePanel() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const activeThreadRef = useRef<BubbleThread | null>(activeThread)
 
   useEffect(() => {
     document.body.classList.add('bubblePanelPage')
@@ -275,6 +324,10 @@ export function BubblePanel() {
   }, [])
 
   useEffect(() => subscribeSocket(setSocket), [])
+
+  useEffect(() => {
+    activeThreadRef.current = activeThread
+  }, [activeThread])
 
   useEffect(() => {
     if (electron) {
@@ -294,53 +347,65 @@ export function BubblePanel() {
     if (!socket || !isConfigured()) return
     const handleConversations = (items: Conversation[]) => {
       if (items.length === 0) return
+      const active = activeThreadRef.current
       const byId = new Map(items.map((item) => [item.id, item]))
       const nextUnread = unreadByConversation(items)
-      if (activeThread) nextUnread[activeThread.threadId] = 0
-      setUnreadMap(nextUnread)
+      if (active) nextUnread[active.threadId] = 0
+      setUnreadMap((current) => sameUnreadMap(current, nextUnread) ? current : nextUnread)
       setThreads((current) => syncThreadsWithConversations(current, items))
       setActiveThread((current) => current ? applyConversationToThread(current, byId.get(current.threadId)) : current)
     }
+    const handleConversation = (item: Conversation) => {
+      const active = activeThreadRef.current
+      setUnreadMap((current) => setUnreadForConversation(current, item, active?.threadId))
+      setThreads((current) => applyConversationToThreads(current, item))
+      setActiveThread((current) => current?.threadId === item.id ? applyConversationToThread(current, item) : current)
+    }
     apiJson<Conversation[]>('/api/conversations').then(handleConversations).catch(() => undefined)
     socket.on('conversations', handleConversations)
+    socket.on('conversation', handleConversation)
     return () => {
       socket.off('conversations', handleConversations)
+      socket.off('conversation', handleConversation)
     }
-  }, [activeThread, socket])
+  }, [socket])
 
   useEffect(() => {
     if (!socket) return
     const handleMessage = (message: ChatMessage) => {
-      if (activeThread && message.threadId === activeThread.threadId) {
+      const active = activeThreadRef.current
+      if (active && message.threadId === active.threadId) {
         setMessages((prev) => {
           if (prev.some((m) => m.id === message.id)) return prev
           return [...prev, message]
         })
         if (!message.isSelf) {
-          setUnreadMap((prev) => ({ ...prev, [activeThread.threadId]: 0 }))
+          setUnreadMap((prev) => (prev[active.threadId] === 0 ? prev : { ...prev, [active.threadId]: 0 }))
           apiJson('/api/events/seen', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ threadId: activeThread.threadId, type: activeThread.type }),
+            body: JSON.stringify({ threadId: active.threadId, type: active.type }),
           }).catch(() => undefined)
         }
       }
     }
     socket.on('message', handleMessage)
     return () => { socket.off('message', handleMessage) }
-  }, [activeThread, socket])
+  }, [socket])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    endRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [messages])
 
   function openThread(thread: BubbleThread) {
     const unreadBeforeOpen = unreadMap[thread.threadId] ?? 0
     const windowSize = bubbleMessageWindowSize(unreadBeforeOpen)
     const shouldRefresh = thread.type === 'group' && unreadBeforeOpen > 0
+    const params = new URLSearchParams({ page: '1', limit: String(windowSize) })
+    if (shouldRefresh) params.set('refresh', '1')
     setActiveThread(thread)
-    apiJson<ChatMessage[]>(`/api/messages/${thread.type}/${thread.threadId}${shouldRefresh ? '?refresh=1' : ''}`)
-      .then((data) => setMessages(Array.isArray(data) ? data.slice(-windowSize) : []))
+    apiJson<MessagePage | ChatMessage[]>(`/api/messages/${thread.type}/${thread.threadId}?${params.toString()}`)
+      .then((data) => setMessages(Array.isArray(data) ? data.slice(-windowSize) : data.messages))
       .catch(() => setMessages([]))
     apiJson('/api/events/seen', {
       method: 'POST',

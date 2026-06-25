@@ -1126,6 +1126,9 @@ function App() {
       lastSocketActivityRef.current = Date.now()
       setStatusIfChanged(nextStatus)
     }
+    const handleSocketPacket = () => {
+      lastSocketActivityRef.current = Date.now()
+    }
     const handleConversations = (items: Conversation[]) => {
       lastSocketActivityRef.current = Date.now()
       applyConversationSnapshot(items)
@@ -1249,6 +1252,7 @@ function App() {
     socket.on('connect', handleConnect)
     socket.on('disconnect', handleDisconnect)
     socket.on('connect_error', handleConnectError)
+    socket.io.on('packet', handleSocketPacket)
     socket.on('status', handleStatus)
     socket.on('conversations', handleConversations)
     socket.on('conversation', handleConversation)
@@ -1272,6 +1276,7 @@ function App() {
       socket.off('connect', handleConnect)
       socket.off('disconnect', handleDisconnect)
       socket.off('connect_error', handleConnectError)
+      socket.io.off('packet', handleSocketPacket)
       socket.off('conversations', handleConversations)
       socket.off('conversation', handleConversation)
       socket.off('message', handleMessage)
@@ -1322,20 +1327,21 @@ function App() {
     const heartbeat = async () => {
       if (stopped || !isConfigured()) return
       const idleMs = Date.now() - lastSocketActivityRef.current
-      if (socket && (!socket.connected || idleMs > SOCKET_STALE_MS)) {
-        reportClientEvent('socket-heartbeat-reconnect', { connected: socket.connected, idleMs })
+      const socketNeedsRecovery = Boolean(socket && (!socket.connected || idleMs > SOCKET_STALE_MS))
+      const shouldRefreshSnapshot = !socket?.connected || idleMs > SOCKET_STALE_MS || !conversationSnapshotReadyRef.current
+      if (socketNeedsRecovery) {
+        reportClientEvent('socket-heartbeat-reconnect', { connected: socket?.connected ?? false, idleMs })
         forceReconnectSocket()
       }
 
       try {
         const [nextStatus, nextConversations] = await Promise.all([
           apiJson<Status>('/api/status'),
-          apiJson<Conversation[]>('/api/conversations'),
+          shouldRefreshSnapshot ? apiJson<Conversation[]>('/api/conversations') : Promise.resolve(null),
         ])
         if (stopped) return
         setStatusIfChanged(nextStatus)
-        applyConversationSnapshot(nextConversations)
-        lastSocketActivityRef.current = Date.now()
+        if (nextConversations) applyConversationSnapshot(nextConversations)
       } catch (error) {
         reportClientEvent('socket-heartbeat-error', { error: error instanceof Error ? error.message : String(error) })
       }
